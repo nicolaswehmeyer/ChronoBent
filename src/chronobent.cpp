@@ -148,6 +148,19 @@ extern "C" chronobent_status chronobent_render(chronobent *instance, chronobent_
             const auto status = instance->ensure(center + (resample ? chronobent_dsp::Sinc::right : 0), reader, user);
             if (status != CHRONOBENT_OK) return status;
             if (resample) instance->sinc.coefficients(source - static_cast<double>(center), coefficients);
+            // Share ring addressing across stereo channels without changing the
+            // tap accumulation order. No fast math or platform-specific SIMD.
+            if (resample && channels == 2) {
+                float left = 0, right = 0;
+                for (std::size_t tap = 0; tap < chronobent_dsp::Sinc::taps; ++tap) {
+                    const auto frame = center - chronobent_dsp::Sinc::left + static_cast<std::int64_t>(tap);
+                    const auto slot = (static_cast<std::size_t>(frame) & (instance->ring_frames - 1)) * 2;
+                    left += coefficients[tap] * (frame < 0 ? 0.0f : instance->ring[slot]);
+                    right += coefficients[tap] * (frame < 0 ? 0.0f : instance->ring[slot + 1]);
+                }
+                output[*produced * 2] = left; output[*produced * 2 + 1] = right;
+                continue;
+            }
             for (std::size_t c = 0; c < channels; ++c) {
                 float value = 0;
                 if (resample) {
@@ -167,4 +180,31 @@ extern "C" std::uint64_t chronobent_output_frames(const chronobent *instance) {
 extern "C" std::uint32_t chronobent_window_frames(const chronobent *instance) {
     return instance ? static_cast<std::uint32_t>(instance->window) : 0;
 }
-extern "C" const char *chronobent_version(void) { return "0.1.0"; }
+extern "C" const char *chronobent_version(void) { return "0.2.0"; }
+
+extern "C" chronobent_config chronobent_default_config(double sample_rate, std::uint32_t channels) {
+    return {sample_rate, channels, 0, 1, 0};
+}
+extern "C" chronobent_parameters chronobent_default_parameters(void) { return {1, 1, 1, 0}; }
+extern "C" const char *chronobent_status_string(chronobent_status status) {
+    switch (status) {
+    case CHRONOBENT_OK: return "OK";
+    case CHRONOBENT_END: return "End of source";
+    case CHRONOBENT_INVALID_ARGUMENT: return "Invalid argument";
+    case CHRONOBENT_OUT_OF_MEMORY: return "Out of memory";
+    case CHRONOBENT_SOURCE_UNAVAILABLE: return "Source unavailable";
+    case CHRONOBENT_INVALID_AUDIO: return "Invalid audio";
+    case CHRONOBENT_NOT_RESET: return "Source or epoch not initialized";
+    case CHRONOBENT_BUSY: return "Transition in progress";
+    default: return "Unknown status";
+    }
+}
+extern "C" chronobent_status chronobent_reset_parameters(chronobent *instance,
+    std::uint64_t input_frames, const chronobent_parameters *p) {
+    if (!instance || !p || input_frames > maximum_frames || !(p->tempo >= .25 && p->tempo <= 4) ||
+        !(p->pitch >= .5 && p->pitch <= 2) || p->transients > 1 || p->formants > 1)
+        return CHRONOBENT_INVALID_ARGUMENT;
+    instance->formants = p->formants != 0;
+    instance->vocoder.options(p->transients != 0, p->formants != 0);
+    return chronobent_reset(instance, input_frames, p->tempo, p->pitch);
+}

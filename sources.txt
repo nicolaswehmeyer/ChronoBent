@@ -3,3 +3,4 @@ src/sinc.cpp
 src/envelope.cpp
 src/vocoder.cpp
 src/chronobent.cpp
+src/processor.cpp

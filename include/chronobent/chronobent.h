@@ -31,7 +31,8 @@ typedef enum chronobent_status {
     CHRONOBENT_OUT_OF_MEMORY = 3,
     CHRONOBENT_SOURCE_UNAVAILABLE = 4,
     CHRONOBENT_INVALID_AUDIO = 5,
-    CHRONOBENT_NOT_RESET = 6
+    CHRONOBENT_NOT_RESET = 6,
+    CHRONOBENT_BUSY = 7
 } chronobent_status;
 
 typedef struct chronobent_config {
@@ -86,6 +87,74 @@ CHRONOBENT_API chronobent_status chronobent_render(chronobent *instance,
 CHRONOBENT_API uint64_t chronobent_output_frames(const chronobent *instance);
 CHRONOBENT_API uint32_t chronobent_window_frames(const chronobent *instance);
 CHRONOBENT_API const char *chronobent_version(void);
+
+/* Additive 0.2 API. The original config layout and status values are unchanged. */
+typedef struct chronobent_parameters {
+    double tempo;          /* .25..4 input frames per output frame. */
+    double pitch;          /* .5..2 frequency ratio; exp2(semitones/12). */
+    uint32_t transients;   /* 0 or 1. */
+    uint32_t formants;     /* 0 or 1. */
+} chronobent_parameters;
+
+CHRONOBENT_API chronobent_config chronobent_default_config(double sample_rate, uint32_t channels);
+CHRONOBENT_API chronobent_parameters chronobent_default_parameters(void);
+CHRONOBENT_API const char *chronobent_status_string(chronobent_status status);
+/* Like reset, also replaces the transient/formant options for this epoch. */
+CHRONOBENT_API chronobent_status chronobent_reset_parameters(chronobent *instance,
+    uint64_t input_frames, const chronobent_parameters *parameters);
+
+typedef struct chronobent_processor chronobent_processor;
+typedef struct chronobent_processor_state {
+    uint64_t input_frames;
+    uint64_t delivered_frames; /* Cumulative since set_source; seek does not clear it. */
+    double source_position;    /* Nominal next source position, clamped at end. */
+    chronobent_parameters parameters; /* Target trajectory, including during fade. */
+    uint32_t transition_remaining;
+    uint32_t ended;
+} chronobent_processor_state;
+
+/* A source-bound worker-side renderer with two preallocated engines. One calling
+ * thread, no reentry. The same source/read lifetime contract as render applies.
+ * transition_frames is 0..65536; 1024 is a useful starting point. create/destroy
+ * allocate/free; all other processor calls allocate nothing and take no locks.
+ * Control calls can synchronously read/preroll up to four analysis windows of
+ * source history and regenerate filter tables. Run them on a rendering worker,
+ * not a time-critical audio callback. No implicit threads or output queue. */
+CHRONOBENT_API chronobent_status chronobent_processor_create(const chronobent_config *config,
+    uint32_t transition_frames, chronobent_processor **instance);
+CHRONOBENT_API void chronobent_processor_destroy(chronobent_processor *instance);
+/* Replaces the source and discards any transition. Reader/user must remain valid
+ * until another successful set_source or destroy. Caller retains ownership.
+ * Empty sources are supported; nonempty sources need a reader. No read here.
+ * Invalid arguments leave the current source and state intact. */
+CHRONOBENT_API chronobent_status chronobent_processor_set_source(chronobent_processor *instance,
+    chronobent_read_fn reader, void *user, uint64_t input_frames,
+    const chronobent_parameters *parameters);
+/* Changes pitch, tempo and options at the next rendered output frame. A linear
+ * crossfade uses the new tempo trajectory immediately. Alignment to the new
+ * epoch's nearest sample differs by at most tempo/2 input frames. Successful
+ * calls invalidate no source data. Failed preroll leaves the audible state
+ * intact and may be retried. BUSY means a previous fade must first be rendered;
+ * identical target parameters succeed without restarting it. */
+CHRONOBENT_API chronobent_status chronobent_processor_set_parameters(chronobent_processor *instance,
+    const chronobent_parameters *parameters);
+/* Explicit discontinuity at an integer source frame in [0,input_frames]. Keeps
+ * target parameters, cancels any fade on success. Failed preroll leaves current
+ * playback intact. During a fade returns BUSY; render it or replace the source.
+ * A host must separately discard its queued output when seeking. */
+CHRONOBENT_API chronobent_status chronobent_processor_seek(chronobent_processor *instance,
+    uint64_t source_frame);
+/* Same produced/prefix/retry contract as render. Interleaved and planar calls
+ * can be mixed without changing samples. Planar needs one distinct writable
+ * channel buffer per configured channel, each holding frames floats. Buffers
+ * must not alias one another or source data. Unproduced tails are untouched. */
+CHRONOBENT_API chronobent_status chronobent_processor_render(chronobent_processor *instance,
+    float *output, size_t frames, size_t *produced);
+CHRONOBENT_API chronobent_status chronobent_processor_render_planar(chronobent_processor *instance,
+    float *const *output, size_t frames, size_t *produced);
+/* No read or DSP work. NOT_RESET before set_source; output is unchanged on error. */
+CHRONOBENT_API chronobent_status chronobent_processor_get_state(const chronobent_processor *instance,
+    chronobent_processor_state *state);
 
 #ifdef __cplusplus
 }

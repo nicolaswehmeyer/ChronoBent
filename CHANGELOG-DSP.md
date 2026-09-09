@@ -1,5 +1,21 @@
 # Change log
 
+## 0.2.0 - 2026-09-09
+
+- Add a source-bound processor with two preallocated engines, smooth parameter
+  changes, seek, state queries, planar output and retryable transitions.
+- Add default configuration/parameters, status descriptions, option-aware epoch
+  reset, a move-only C++ wrapper and runnable C/C++ integration examples.
+- Retain the 0.1.0 functions, config layout and status values.
+- Move Lab parameter transitions into the public processor implementation.
+  Control changes no longer allocate new engines.
+- Share stereo resampler addressing while retaining summation order. Local
+  median render time fell 8.25% to 23.22% in eight pitch-resampling benchmark
+  cases; all 29 mono and 42 stereo reference outputs stayed byte-identical.
+  See [measurement scope](QUALITY.md#020-regression-and-performance-comparison).
+- Expand README integration sections and add the complete [API reference](API.md).
+- Set app bundle version metadata directly from the CMake project version.
+
 ## 0.1.0 - 2026-09-09
 
 First experimental release.

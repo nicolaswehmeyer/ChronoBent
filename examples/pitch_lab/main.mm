@@ -3,6 +3,7 @@
 #import <Cocoa/Cocoa.h>
 #import <AVFoundation/AVFoundation.h>
 #include "player.hpp"
+#include "chronobent/chronobent.h"
 #include <cmath>
 #include <array>
 #include <chrono>
@@ -107,7 +108,7 @@ static NSButton *button(NSString *text, id owner, SEL action) {
     NSView *view = _window.contentView;
     NSTextField *heading = label(@"ChronoBent Lab", 32, NSFontWeightSemibold);
     heading.frame = NSMakeRect(36,585,500,45); [view addSubview:heading];
-    NSTextField *sub = label(@"ChronoBent · pitch & time engine · 0.1.0",12,NSFontWeightRegular);
+    NSTextField *sub = label([NSString stringWithFormat:@"ChronoBent · pitch & time engine · %s",chronobent_version()],12,NSFontWeightRegular);
     sub.textColor = NSColor.secondaryLabelColor; sub.frame = NSMakeRect(38,561,660,22); [view addSubview:sub];
     _open = button(@"Open audio…",self,@selector(openAudio:));
     _open.frame = NSMakeRect(34,504,130,34); [view addSubview:_open];

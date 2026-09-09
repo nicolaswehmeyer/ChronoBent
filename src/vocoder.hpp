@@ -12,6 +12,7 @@ class Vocoder {
 public:
     Vocoder(std::size_t size, std::size_t channels, double sample_rate, bool transients, bool formants);
     void reset(double rate, double pitch) noexcept;
+    void options(bool transients, bool formants) noexcept { transients_ = transients; formants_ = formants; }
     // One interleaved, window-sized input frame; no retained input pointer.
     // Writes hop() interleaved samples, beginning at synthesis_start().
     void process(const float *input, float *output) noexcept;

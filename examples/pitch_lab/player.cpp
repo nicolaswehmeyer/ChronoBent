@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Nicolas Wehmeyer
 #include "player.hpp"
-#include "chronobent/chronobent.h"
+#include "chronobent/chronobent.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -30,51 +30,7 @@ Ratios unpack(std::uint64_t word) {
     const double semitones = double(word & ((1u<<22)-1))/100000-12;
     return {master ? std::exp2(semitones/12) : tempo, tempo, master && bool((word >> 45) & 1)};
 }
-struct Epoch {
-    std::unique_ptr<chronobent, decltype(&chronobent_destroy)> dsp{nullptr, chronobent_destroy};
-    const std::vector<float> &audio;
-    std::uint64_t origin = 0, output = 0;
-    Ratios ratios;
-    Epoch(const std::vector<float> &source, double sr, double position, Ratios settings)
-        : audio(source), ratios(settings) {
-        chronobent_config config{sr,2,0,1,settings.formants ? 1u : 0u};
-        chronobent *raw = nullptr;
-        if (chronobent_create(&config,&raw) != CHRONOBENT_OK) throw std::runtime_error("create failed");
-        dsp.reset(raw);
-        const auto history = std::uint64_t(chronobent_window_frames(raw))*4;
-        const auto at = std::uint64_t(std::floor(position));
-        origin = at > history ? at-history : 0;
-        if (chronobent_reset(raw,audio.size()/2-origin,ratios.tempo,ratios.pitch) != CHRONOBENT_OK)
-            throw std::runtime_error("reset failed");
-        // Align on the new epoch's nearest output sample. At the supported app
-        // speeds this introduces at most one source sample of phase alignment
-        // error. The host timeline remains continuous and never rounds a block.
-        auto remaining = std::uint64_t(std::llround((position-double(origin))/ratios.tempo));
-        remaining = std::min(remaining,chronobent_output_frames(raw));
-        std::array<float,512> discard{};
-        while (remaining) {
-            const auto count = std::size_t(std::min<std::uint64_t>(256,remaining));
-            if (render(discard.data(),count) != count) throw std::runtime_error("preroll failed");
-            remaining -= count;
-        }
-    }
-    static int read(void *context, std::uint64_t first, std::size_t count, float *out) {
-        auto &self = *static_cast<Epoch *>(context);
-        const auto length = self.audio.size()/2;
-        if (first > length-self.origin || count > length-self.origin-first) return 0;
-        std::copy_n(self.audio.data()+2*(self.origin+first),count*2,out);
-        return 1;
-    }
-    std::uint64_t remaining() const { return chronobent_output_frames(dsp.get())-output; }
-    std::size_t render(float *out, std::size_t count) {
-        std::size_t got = 0;
-        const auto status = chronobent_render(dsp.get(),read,this,out,count,&got);
-        if (status != CHRONOBENT_OK && status != CHRONOBENT_END) throw std::runtime_error("render failed");
-        output += got;
-        std::fill(out+got*2,out+count*2,0);
-        return got;
-    }
-};
+
 }
 Player::Player(std::vector<float> stereo, double sample_rate, Settings initial)
     : audio_(std::move(stereo)), sample_rate_(sample_rate) {
@@ -107,42 +63,44 @@ void Player::pull(float *left, float *right, std::size_t count) noexcept {
 }
 void Player::run() noexcept {
     try {
-        auto current = std::make_unique<Epoch>(audio_,sample_rate_,0,unpack(settings_.load()));
-        std::unique_ptr<Epoch> next;
-        std::array<float,512> old_audio{},new_audio{};
-        std::size_t fade = 0;
+        chronobent_cpp::Processor processor(chronobent_default_config(sample_rate_,2),1024);
+        auto source_read = [](void *context, std::uint64_t first, std::size_t count, float *out) -> int {
+            const auto &source = *static_cast<const std::vector<float> *>(context);
+            if (first > source.size()/2 || count > source.size()/2-first) return 0;
+            std::copy_n(source.data()+first*2,count*2,out);
+            return 1;
+        };
+        auto parameters = [](Ratios r) { return chronobent_parameters{r.tempo,r.pitch,1,r.formants ? 1u : 0u}; };
+        auto check = [](chronobent_status status) {
+            if (status != CHRONOBENT_OK && status != CHRONOBENT_END)
+                throw std::runtime_error(chronobent_status_string(status));
+        };
+        check(processor.set_source(source_read,&audio_,frames(),parameters(unpack(settings_.load()))));
+        std::array<float,512> output{};
         std::uint64_t position = 0;
-        double source_position = 0;
         while (!stopping_.load()) {
             const auto free = capacity-(position-read_.load(std::memory_order_acquire));
             if (!free) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1)); continue;
             }
-            if (!current->remaining() && !next) break;
-            const auto desired = unpack(settings_.load());
-            if (!next && (desired.pitch != current->ratios.pitch || desired.tempo != current->ratios.tempo ||
-                          desired.formants != current->ratios.formants)) {
-                next = std::make_unique<Epoch>(audio_,sample_rate_,source_position,desired);
-                fade = 0;
-            }
-            auto &trajectory = next ? *next : *current;
-            const auto count = std::size_t(std::min({UINT64_C(256),trajectory.remaining(),free}));
-            if (!count) break;
-            current->render(old_audio.data(),count);
-            if (next) next->render(new_audio.data(),count);
+            // Coalesce UI automation while a fade is in flight. The reusable
+            // processor owns preroll, both engines, mixing and source timeline.
+            const auto command = processor.set_parameters(parameters(unpack(settings_.load())));
+            if (command != CHRONOBENT_BUSY) check(command);
+            chronobent_processor_state before{},after{};
+            check(processor.state(before));
+            std::size_t count = 0;
+            const auto status = processor.render(output.data(),std::size_t(std::min<std::uint64_t>(256,free)),count);
+            check(status); check(processor.state(after));
             for (std::size_t i=0; i<count; ++i) {
-                const float blend = next ? std::min(1.0f,float(fade+i+1)/1024) : 0;
                 const auto index = std::size_t(position+i) & (capacity-1);
-                for (std::size_t channel=0; channel<2; ++channel)
-                    queue_[2*index+channel]=old_audio[2*i+channel]*(1-blend)+new_audio[2*i+channel]*blend;
-                source_queue_[index]=std::min(double(frames()),source_position+double(i+1)*trajectory.ratios.tempo);
+                queue_[2*index]=output[2*i]; queue_[2*index+1]=output[2*i+1];
+                source_queue_[index]=std::min(double(frames()),before.source_position+double(i+1)*before.parameters.tempo);
             }
-            source_position=std::min(double(frames()),source_position+double(count)*trajectory.ratios.tempo);
-            if (trajectory.remaining()==0) source_queue_[std::size_t(position+count-1)&(capacity-1)]=double(frames());
-            if (next && (fade+=count)>=1024) current=std::move(next);
+            if (count) source_queue_[std::size_t(position+count-1)&(capacity-1)]=after.source_position;
             position+=count;
             written_.store(position,std::memory_order_release);
-            if (source_position>=double(frames())) break;
+            if (status==CHRONOBENT_END) break;
         }
     } catch (...) { error_.store(1); }
     finished_.store(true);

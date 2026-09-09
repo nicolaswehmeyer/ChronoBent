@@ -1,6 +1,6 @@
 # Quality measurements
 
-Version 0.1.0 has synthetic regression coverage. Blinded listening results on
+Version 0.2.0 has synthetic regression coverage. Blinded listening results on
 music and audio-device deadline measurements are still pending.
 
 ## Run the measurements
@@ -43,6 +43,27 @@ Player tests cover half, double and fractional speeds with Master Tempo on and
 off, source-position continuity, mixed 16 to 4096-frame callbacks, pause, bypass,
 end of source and thread teardown. These tests use synthetic audio and do not
 measure system audio deadlines.
+
+## 0.2.0 regression and performance comparison
+
+On the development Apple Silicon Mac with the same Release compiler settings,
+all 29 generated mono outputs and 42 additional stereo outputs matched the
+frozen 0.1.0 renderer byte for byte. Stereo comparisons covered 44.1, 48 and
+96 kHz, seven pitch/tempo combinations and both formant modes. This demonstrates
+unchanged samples for those inputs, not universal perceptual equivalence.
+
+Five alternating baseline/candidate benchmark runs showed 8.25% to 23.22% lower
+median render time in the eight stereo cases with pitch resampling. The two
+pitch-unity cases were 0.66% to 0.75% slower in that run. The optimized loop shares
+ring-buffer addressing between stereo channels and retains tap accumulation
+order. These are local throughput observations, not audio deadline guarantees
+or measurements on every supported platform.
+
+Processor tests add parameter transitions, all DSP options, allocation checks,
+seek/restart/end behavior, control-failure rollback, planar/interleaved equality,
+block partitioning, partial error output and exact recovery through repeated
+source failures during a fade. C and C++ examples run as tests. The Lab app
+uses this same processor implementation.
 
 ## Listening procedure
 

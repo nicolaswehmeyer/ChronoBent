@@ -21,6 +21,9 @@ jobs:
       - run: cmake --build build --config Release --parallel 2
       - run: ctest --test-dir build -C Release --output-on-failure
       - run: cmake --install build --config Release --prefix install
+      - run: cmake -S tests/consumer -B build-consumer -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${{ github.workspace }}/install"
+      - run: cmake --build build-consumer --config Release --parallel 2
+      - run: ctest --test-dir build-consumer -C Release --output-on-failure
   sanitize:
     runs-on: ubuntu-latest
     steps:

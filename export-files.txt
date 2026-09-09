@@ -1,5 +1,6 @@
 .github/workflows/ci.yml
 .gitignore
+API.md
 CHANGELOG-DSP.md
 CMakeLists.txt
 DESIGN.md
@@ -11,9 +12,12 @@ examples/benchmark.cpp
 examples/pitch_lab/main.mm
 examples/pitch_lab/player.cpp
 examples/pitch_lab/player.hpp
+examples/processor_c.c
+examples/processor_cpp.cpp
 examples/render_wav.cpp
 export-files.txt
 include/chronobent/chronobent.h
+include/chronobent/chronobent.hpp
 sources.mk
 sources.txt
 src/chronobent.cpp
@@ -21,13 +25,16 @@ src/envelope.cpp
 src/envelope.hpp
 src/fft.cpp
 src/fft.hpp
+src/processor.cpp
 src/sinc.cpp
 src/sinc.hpp
 src/vocoder.cpp
 src/vocoder.hpp
+tests/consumer/CMakeLists.txt
 tests/test_c.c
 tests/test_chronobent.cpp
 tests/test_player.cpp
+tests/test_processor.cpp
 tests/test_wav.py
 tools/export_source.py
 tools/measure_quality.py

@@ -16,6 +16,7 @@ accumulate ratio drift.
 | `envelope` | Tapered cepstral smoothing and bounded spectral-envelope correction |
 | `sinc` | 96-tap, 1024-phase interpolated Blackman-windowed low-pass resampling |
 | `chronobent` | C ABI, validation, reset epochs, clipped source reads, ring storage and exact output length |
+| `processor` | Bound source, preallocated epoch pair, control preroll, retryable crossfades, seek, planar output and position |
 
 Each instance owns its tables and working buffers. The standard C++ library is
 required. File and audio-device APIs belong to the examples.
@@ -86,8 +87,9 @@ callbacks should use the explicit error return instead.
 
 ## Audition host
 
-The example player decodes immutable stereo PCM and feeds two independent DSP
-epochs into an equal-gain linear crossfade. Tempo and pitch are separate ratios.
+The reusable processor feeds two preallocated DSP epochs into an equal-gain
+linear crossfade. The example player decodes immutable stereo PCM and uses
+that processor through the public C++ wrapper. Tempo and pitch are separate ratios.
 Master Tempo keeps the selected pitch while changing tempo; disabling it sets
 pitch equal to tempo. Bypass sets both to one. A packed lock-free command word
 publishes all controls coherently, with 0.00001-semitone and 0.000001-tempo
@@ -95,8 +97,8 @@ resolution. Repeated requests coalesce during the 1024-frame transition.
 
 A new epoch prerolls from earlier source audio and starts at the nearest output
 sample to the current source position (at most one input sample of alignment
-error at the app's supported speeds). The host source timeline advances in
-floating-point source frames per output frame, independently of callback sizes.
+error at the app's supported speeds). The processor computes source position from an absolute output counter in each
+trajectory, independently of callback sizes.
 Each queue frame carries its source position. During a speed crossfade the new
 epoch defines that timeline; the old epoch contributes only its fading audio.
 The final source position is the source length. Fixed-speed duration is exactly
@@ -109,6 +111,9 @@ consumed frames. The producer fills even partial free queue space to support
 mixed callback sizes. Destruction stops and joins the worker before source
 storage can retire. A captured shared owner keeps playback alive for the native
 callback. The example requires always-lock-free scalar atomics at compile time.
+
+See [API.md](API.md) for control failure rollback, staged crossfade reads and
+explicit seek discontinuities.
 
 ## Evaluation
 

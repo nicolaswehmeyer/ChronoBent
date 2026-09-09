@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(chronobent VERSION 0.1.0 LANGUAGES C CXX)
+project(chronobent VERSION 0.2.0 LANGUAGES C CXX)
 
 option(CHRONOBENT_BUILD_TESTS "Build synthetic regression tests" ON)
 option(CHRONOBENT_BUILD_EXAMPLES "Build the WAV renderer and benchmark" ON)
@@ -48,6 +48,10 @@ if(CHRONOBENT_BUILD_TESTS)
     target_link_libraries(chronobent-c-test PRIVATE chronobent)
     set_target_properties(chronobent-c-test PROPERTIES LINKER_LANGUAGE CXX)
     add_test(NAME chronobent-c-api COMMAND chronobent-c-test)
+    add_executable(chronobent-processor-test tests/test_processor.cpp)
+    target_compile_features(chronobent-processor-test PRIVATE cxx_std_17)
+    target_link_libraries(chronobent-processor-test PRIVATE chronobent)
+    add_test(NAME chronobent-processor COMMAND chronobent-processor-test)
 endif()
 if(CHRONOBENT_BUILD_PITCH_LAB OR CHRONOBENT_BUILD_TESTS)
     find_package(Threads REQUIRED)
@@ -68,7 +72,9 @@ if(CHRONOBENT_BUILD_PITCH_LAB)
     add_executable(chronobent-pitch-lab MACOSX_BUNDLE examples/pitch_lab/main.mm)
     set_target_properties(chronobent-pitch-lab PROPERTIES
         OUTPUT_NAME "ChronoBent Lab" MACOSX_BUNDLE_GUI_IDENTIFIER "local.chronobent.pitchlab"
-        MACOSX_BUNDLE_BUNDLE_NAME "ChronoBent Lab" MACOSX_BUNDLE_BUNDLE_VERSION "0.1.0"
+        MACOSX_BUNDLE_BUNDLE_NAME "ChronoBent Lab" MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_LONG_VERSION_STRING "${PROJECT_VERSION}"
         OBJCXX_STANDARD 17 OBJCXX_STANDARD_REQUIRED YES)
     target_compile_options(chronobent-pitch-lab PRIVATE -fobjc-arc)
     target_link_libraries(chronobent-pitch-lab PRIVATE chronobent-audition "-framework Cocoa" "-framework AVFoundation")
@@ -83,7 +89,15 @@ if(CHRONOBENT_BUILD_EXAMPLES)
     add_executable(chronobent-benchmark examples/benchmark.cpp)
     target_compile_features(chronobent-benchmark PRIVATE cxx_std_17)
     target_link_libraries(chronobent-benchmark PRIVATE chronobent)
+    add_executable(chronobent-example-c examples/processor_c.c)
+    set_target_properties(chronobent-example-c PROPERTIES LINKER_LANGUAGE CXX)
+    target_link_libraries(chronobent-example-c PRIVATE chronobent)
+    add_executable(chronobent-example-cpp examples/processor_cpp.cpp)
+    target_compile_features(chronobent-example-cpp PRIVATE cxx_std_17)
+    target_link_libraries(chronobent-example-cpp PRIVATE chronobent)
     if(CHRONOBENT_BUILD_TESTS)
+        add_test(NAME chronobent-example-c COMMAND chronobent-example-c)
+        add_test(NAME chronobent-example-cpp COMMAND chronobent-example-cpp)
         find_package(Python3 COMPONENTS Interpreter REQUIRED)
         add_test(NAME chronobent-quality COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tools/measure_quality.py $<TARGET_FILE:chronobent-render>)
