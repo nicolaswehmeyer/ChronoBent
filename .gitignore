@@ -1,0 +1,14 @@
+/build*/
+/install/
+/out/
+__pycache__/
+.DS_Store
+*.wav
+*.a
+*.so
+*.dylib
+*.dll
+*.lib
+*.exe
+*.zip
+*.json

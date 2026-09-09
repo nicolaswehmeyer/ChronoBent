@@ -1,0 +1,5 @@
+src/fft.cpp
+src/sinc.cpp
+src/envelope.cpp
+src/vocoder.cpp
+src/chronobent.cpp
