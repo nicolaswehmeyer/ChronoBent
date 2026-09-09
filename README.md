@@ -113,7 +113,13 @@ paths and malformed input. This example loads the source into memory.
 
 ## ChronoBent Lab
 
-Build the macOS app:
+[Download ChronoBent Lab 0.1.0 for macOS](https://github.com/nicolaswehmeyer/ChronoBent/releases/download/v0.1.0/ChronoBent-Lab-0.1.0-macOS-universal.dmg).
+The DMG includes Apple Silicon and Intel builds for macOS 11 or later. Drag
+ChronoBent Lab to Applications, then open it. The app is signed with Developer
+ID and notarized by Apple. A SHA-256 checksum is available on the
+[release page](https://github.com/nicolaswehmeyer/ChronoBent/releases/tag/v0.1.0).
+
+To build the app from source:
 
 ```sh
 cmake -S . -B build-mac -DCMAKE_BUILD_TYPE=Release -DCHRONOBENT_BUILD_PITCH_LAB=ON
