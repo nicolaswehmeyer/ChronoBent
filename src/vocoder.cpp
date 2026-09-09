@@ -39,11 +39,11 @@ void Vocoder::reset(double rate, double pitch) noexcept {
         attack_analysis_[i] = taper(std::min(1.0, rate_));
         attack_synthesis_[i] = taper(std::min(1.0, 1 / rate_));
     }
-    std::fill(overlap_.begin(), overlap_.end(), 0);
-    std::fill(weight_.begin(), weight_.end(), 0);
-    std::fill(rotation_.begin(), rotation_.end(), 0);
-    std::fill(previous_phase_.begin(), previous_phase_.end(), 0);
-    std::fill(previous_magnitude_.begin(), previous_magnitude_.end(), 0);
+    std::fill(overlap_.begin(), overlap_.end(), 0.0f);
+    std::fill(weight_.begin(), weight_.end(), 0.0f);
+    std::fill(rotation_.begin(), rotation_.end(), 0.0);
+    std::fill(previous_phase_.begin(), previous_phase_.end(), 0.0);
+    std::fill(previous_magnitude_.begin(), previous_magnitude_.end(), 0.0);
 }
 
 std::int64_t Vocoder::analysis_start() const noexcept {
@@ -167,9 +167,9 @@ void Vocoder::process(const float *input, float *output) noexcept {
         for (std::size_t c = 0; c < channels_; ++c)
             output[i * channels_ + c] = weight_[i] > 1e-8f ? overlap_[i * channels_ + c] / weight_[i] : 0;
     std::move(overlap_.begin() + static_cast<std::ptrdiff_t>(hop_ * channels_), overlap_.end(), overlap_.begin());
-    std::fill(overlap_.end() - static_cast<std::ptrdiff_t>(hop_ * channels_), overlap_.end(), 0);
+    std::fill(overlap_.end() - static_cast<std::ptrdiff_t>(hop_ * channels_), overlap_.end(), 0.0f);
     std::move(weight_.begin() + static_cast<std::ptrdiff_t>(hop_), weight_.end(), weight_.begin());
-    std::fill(weight_.end() - static_cast<std::ptrdiff_t>(hop_), weight_.end(), 0);
+    std::fill(weight_.end() - static_cast<std::ptrdiff_t>(hop_), weight_.end(), 0.0f);
     std::copy(phase_.begin(), phase_.end(), previous_phase_.begin());
     std::copy(magnitude_.begin(), magnitude_.end(), previous_magnitude_.begin());
     previous_analysis_ = analysis;

@@ -46,7 +46,7 @@ struct chronobent {
 
     chronobent_status read(chronobent_read_fn reader, void *user,
                          std::int64_t first, std::size_t count) noexcept {
-        std::fill_n(input.data(), count * channels, 0);
+        std::fill_n(input.data(), count * channels, 0.0f);
         const auto prefix = first < 0 ? std::min(count, static_cast<std::size_t>(-first)) : 0;
         const auto begin = first < 0 ? UINT64_C(0) : static_cast<std::uint64_t>(first);
         if (begin >= source_length || prefix == count) return CHRONOBENT_OK;
@@ -114,7 +114,7 @@ extern "C" chronobent_status chronobent_reset(chronobent *instance, std::uint64_
     instance->rate = tempo / pitch;
     instance->vocoder.reset(instance->rate, pitch);
     instance->sinc.prepare(pitch);
-    std::fill(instance->ring.begin(), instance->ring.end(), 0);
+    std::fill(instance->ring.begin(), instance->ring.end(), 0.0f);
     instance->ready = true;
     return CHRONOBENT_OK;
 }

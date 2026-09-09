@@ -28,6 +28,13 @@ spectral-envelope preservation and band-limited resampling. See [DESIGN.md](DESI
 - Add reproducible generated-signal measurements and the explicit listening
   protocol in [QUALITY.md](QUALITY.md). No recordings are distributed.
 
+### Portability validation
+
+The initial hosted Linux/Windows builds exposed reliance on transitive integer
+headers in tests/examples and an integer-to-float template warning in zero-fill
+calls. Explicit `<cstdint>` includes and typed zero values resolve the source
+issues without changing the DSP operations.
+
 ### Deferred or rejected approaches
 
 Adding a pitch-synchronous synthesis path or multiple FFT resolutions without
