@@ -1,55 +1,61 @@
 # ChronoBent
 
-An independent C++17 pitch and time engine with a small C API and an MIT license.
-**0.1.0 is the first experimental release.** Music listening and target-device
-qualification are still required; synthetic accuracy is not a perceptual
-quality rating. The API may change before 1.0.
+ChronoBent is a C++17 library for changing audio pitch and tempo, with a C API
+and an [MIT license](LICENSE).
 
-The implementation has no external DSP dependency. It supports independent
-pitch and tempo, linked mono/stereo/multichannel processing, sparse-attack timing
-and optional approximate formant preservation. The FFT, phase processing,
-envelope estimator and resampler are separate, newly authored compilation units.
+- Separate pitch and tempo controls, including Master Tempo.
+- Linked processing for mono, stereo and up to eight channels.
+- Transient handling and optional formant preservation.
+- Bounded memory, with no allocation or locks during rendering.
+- Static and shared builds for Linux, macOS and Windows.
+- WAV renderer, benchmark and optional macOS audition app.
+
+Version 0.1.0 is experimental. The API may change before 1.0. See
+[quality measurements](QUALITY.md) for test coverage and current limits.
 
 ## Build
 
+Requires CMake 3.16+, a C/C++17 compiler and the C++ standard library. Tests of
+the WAV example also require Python 3. No dependencies are downloaded.
+
 ```sh
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --parallel
-ctest --test-dir build --output-on-failure
+cmake --build build --config Release --parallel
+ctest --test-dir build -C Release --output-on-failure
 ```
 
-CMake 3.16+, a C/C++17 compiler and a C++ standard library are required. Tests
-of the WAV example additionally use Python 3's standard library. There are no
-network downloads. Set `CHRONOBENT_BUILD_TESTS=OFF` and
-`CHRONOBENT_BUILD_EXAMPLES=OFF` for the library alone. `BUILD_SHARED_LIBS=ON` builds
-a shared library; the public C functions are the only exported DSP interface.
-`CHRONOBENT_SANITIZE=ON` enables ASan/UBSan with Clang/GCC.
+Options:
 
-```sh
-cmake --install build --prefix /your/install/prefix
-```
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `BUILD_SHARED_LIBS` | `OFF` | Build a shared library |
+| `CHRONOBENT_BUILD_TESTS` | `ON` | Build regression tests |
+| `CHRONOBENT_BUILD_EXAMPLES` | `ON` | Build the WAV renderer and benchmark |
+| `CHRONOBENT_BUILD_PITCH_LAB` | `OFF` | Build ChronoBent Lab on macOS |
+| `CHRONOBENT_SANITIZE` | `OFF` | Enable ASan/UBSan with Clang or GCC |
 
-An independent CMake consumer can use `find_package(chronobent CONFIG REQUIRED)`
-and link `chronobent::chronobent`. Enable the C++ language/linker even for C callers
-of a static build. `sources.txt` also lists all implementation units for build
-systems that compile source directly; `sources.mk` consumes that same list.
-The pre-1.0 public API has no stable ABI promise yet.
+Install with `cmake --install build --config Release --prefix /your/install/prefix`.
+CMake consumers can use `find_package(chronobent CONFIG REQUIRED)` and link
+`chronobent::chronobent`. Static C consumers must enable the C++ linker.
+For other build systems, `sources.txt` lists the implementation files and
+`sources.mk` provides a Make include. The ABI may change before 1.0.
 
-## Ratios and processing
+## API
 
-- `tempo = input frames / output frame`: 1 is unchanged, 2 is twice as fast.
-- `pitch = output frequency / input frequency`: 2 is one octave up.
-- For semitones, use `pitch = exp2(semitones / 12.0)`.
-- Tempo is 0.25–4, pitch is 0.5–2, sample rate is 8–192 kHz, channels are 1–8.
-- Output length is exactly `ceil(input_frames / tempo)`. Unity is an exact copy.
+The caller provides a synchronous read callback over immutable, interleaved
+float audio. Reads can overlap, look ahead or revisit earlier frames. The
+renderer clips reads to the declared source and pads outside it with zeros.
+See the [C header](include/chronobent/chronobent.h) for the full contract.
 
-[The C header](include/chronobent/chronobent.h) specifies all ownership, error and
-thread contracts. The caller supplies a synchronous read callback over an
-immutable interleaved float source. The renderer may request overlapping ranges,
-look ahead or revisit earlier frames. It clips reads to the declared source and
-pads outside it with zeros. No file, thread, device or UI belongs to the DSP.
+| Parameter | Meaning | Range |
+| --- | --- | --- |
+| Tempo | Input frames per output frame; 2 is twice as fast | 0.25 to 4 |
+| Pitch | Output frequency divided by input frequency; 2 is an octave up | 0.5 to 2 |
+| Sample rate | Frames per second | 8000 to 192000 |
+| Channels | Interleaved channel count | 1 to 8 |
 
-A typical C call sequence is:
+Convert semitones with `exp2(semitones / 12.0)`. Output length is exactly
+`ceil(input_frames / tempo)`. Pitch and tempo both at 1 produce an exact copy.
 
 ```c
 #include <chronobent/chronobent.h>
@@ -60,55 +66,54 @@ if (chronobent_create(&config, &engine) == CHRONOBENT_OK) {
     if (chronobent_reset(engine, input_frames, 1.0, pitch_ratio) == CHRONOBENT_OK) {
         size_t produced = 0;
         chronobent_status status = chronobent_render(engine, reader, user,
-                                                 output, requested, &produced);
-        /* Consume only produced frames, including on END or a source error.
-           Repeat until END; handle errors instead of assuming a full block. */
+                                                    output, requested, &produced);
+        /* Consume produced frames even on END or a source error.
+           Repeat until END, handling errors before continuing. */
         (void)status;
     }
     chronobent_destroy(engine);
 }
 ```
 
-The snippets belong inside a caller providing `reader`, `user`, the source
-length, ratios and an output buffer. See [the WAV example](examples/render_wav.cpp)
-for a complete program and [the C consumer](tests/test_c.c) for a minimal test.
+This fragment assumes the caller supplies the source length, ratio, callback
+and output buffer. The [WAV renderer](examples/render_wav.cpp) is a complete
+example; [test_c.c](tests/test_c.c) shows a minimal C consumer.
 
-Allocation happens at create/destroy. Reset clears history and prepares bounded
-filter/window tables without allocation. Render performs no allocation, locks
-or I/O; the callback's cost and realtime suitability are the caller's
-responsibility. An instance has one calling thread at a time. There is no
-shared mutable DSP state. Memory is bounded by channel/window configuration,
-independent of track duration.
+Allocation happens at create/destroy. Reset clears history and prepares tables
+without allocation. Render performs no allocation, locks or I/O, apart from
+work done by the caller's read callback. Each instance permits one calling
+thread at a time and owns its working memory. Memory use depends on channel
+count and window size, not track duration.
 
-This is a **pull renderer for accessible source audio**, with compensated
-startup/tail timing. It is not a zero-lookahead live-input processor. Ratios
-stay constant for each reset/render epoch. For continuous controls, run
-successive epochs at corresponding source positions and crossfade their output.
-Resetting a live instance without a host transition can click.
+Pitch and tempo stay constant between resets. Continuous controls require
+successive render epochs aligned to the current source position, with a
+crossfade between them. The [example player](examples/pitch_lab/player.hpp)
+implements this on a worker thread. This API requires accessible source audio;
+it does not accept live input with fixed latency.
 
-## Master Tempo in a host
+## Master Tempo
 
-Use `chronobent_reset(engine, frames, speed, 1.0)` to change speed while keeping
-the source pitch. For example, speed `1.25` produces 80% of the original
-duration at the original key. To set an independent key, supply
-`exp2(semitones / 12.0)` for pitch. Turntable-style playback uses equal tempo
-and pitch ratios. The optional [player example](examples/pitch_lab/player.hpp)
-adds continuous controls with worker-side preroll and crossfades.
+Call `chronobent_reset(engine, frames, speed, 1.0)` to change speed at the
+original key. A speed of `1.25` produces 80% of the original duration.
+Set pitch separately to transpose while retaining that speed. Setting pitch
+and tempo to the same ratio gives turntable-style playback.
 
-## Audition
+## WAV renderer
 
-Render a WAV without changing its tempo, up one semitone:
+Raise pitch by one semitone at the original tempo:
 
 ```sh
 build/chronobent-render input.wav shifted.wav 1 1.059463094
 ```
 
-The example accepts RIFF PCM16/24/32 or float32 WAV and writes float32 WAV.
-Optional arguments select `tonal`/`transients` and `shift`/`preserve` formants.
-It refuses existing output paths and malformed input. It loads the input into
-memory; this example's memory cost is separate from the bounded DSP contract.
+On Windows, use `build/Release/chronobent-render.exe`. The renderer reads RIFF
+PCM16/24/32 or float32 WAV and writes float32 WAV. Optional arguments select
+`tonal`/`transients` and `shift`/`preserve` formants. It refuses existing output
+paths and malformed input. This example loads the source into memory.
 
-On macOS, build the native audition app:
+## ChronoBent Lab
+
+Build the macOS app:
 
 ```sh
 cmake -S . -B build-mac -DCMAKE_BUILD_TYPE=Release -DCHRONOBENT_BUILD_PITCH_LAB=ON
@@ -116,55 +121,38 @@ cmake --build build-mac --parallel
 open 'build-mac/ChronoBent Lab.app'
 ```
 
-Open a local audio file and press Play. The speed fader spans 50–200%.
-**Master Tempo is on by default:** speed changes preserve the original key
-when the pitch fader is at zero. The independent ±12-semitone fader sets a
-different key while retaining the selected tempo. Turn Master Tempo off for
-turntable-style playback, where pitch follows speed; the pitch/formant controls
-then become inactive. Bypass returns to original pitch and speed. All parameter
-changes use a 1024-frame crossfade, and the time display follows source position. Playback pauses without advancing the source;
-Restart returns to the beginning. The output uses equal −3.1 dB headroom in
-processed and bypass modes. The status line reports queue depth and underruns.
+Open an audio file and press Play. Speed ranges from 50% to 200%; pitch ranges
+from -12 to +12 semitones. Master Tempo starts enabled, so speed changes retain
+the selected key. Disable it to link pitch to speed. Bypass restores the
+original pitch and speed. Restart returns to the beginning.
 
-The Mac app uses Cocoa and AVFoundation system frameworks. It decodes mono or
-stereo files at 8–192 kHz, up to 64 million frames, and keeps decoded PCM in
-memory. Its audio callback consumes a 4096-frame SPSC queue; DSP and transition
-preroll run on a worker. Fader response includes this queue, a crossfade and
-system output latency. Paused queued audio can contain the previous setting
-for up to one queue after resuming. It performs no recording or uploads.
+Control changes use a 1024-frame crossfade. The time display follows source
+position. Playback pauses without advancing the source. Both processed and
+bypass output use -3.1 dB headroom. The status line shows queue depth and
+underruns.
 
-## Quality and scope
+The app uses Cocoa and AVFoundation. It decodes mono or stereo files at 8 to
+192 kHz, up to 64 million frames, and keeps the decoded audio in memory. A worker
+renders into a 4096-frame queue consumed by the audio callback. Control response
+includes queue depth, crossfade time and system output latency. After resuming
+from pause, up to one queue of audio may still use the previous setting.
 
-The synthetic tests check pitch frequency, exact unity/duration, arbitrary block
-sizes, anti-phase and independent channels, silence, sparse off-grid attacks,
-a mixed percussive stress signal, one out-of-band alias test, a synthetic vowel,
-source failure/retry and reset isolation. The optional Python standard-library
-measurement harness generates tones, clicks, colored noise, a sweep and a
-percussive harmonic mixture; see [QUALITY.md](QUALITY.md). The independent FFT oracle computes
-a direct DFT. Allocation traps check reset/render. The app tests cover queue
-ownership, fractional pitch and speed changes, Master Tempo, bypass, pause/end, mixed
-16–4096-frame callbacks and teardown. These are
-regression tests with stated tolerances, not proof over all music.
+## Performance and limits
 
-Known limits include phase-vocoder texture on dense polyphonic material,
-ambiguous attacks in mixtures, possible timbre changes around attack admission,
-short-window bass resolution and difficult extreme ratios. Sparse-attack
-anchoring is not source separation. Formant preservation adjusts a smooth
-spectral envelope; it is not a vocal model and can affect non-vocal instruments.
-No universal loudness, true-peak or alias-floor guarantee is made. Hosts should
-provide appropriate output headroom.
+The phase vocoder can change the texture of dense mixes and smear ambiguous
+attacks. Short windows limit bass resolution. Formant preservation adjusts a
+smooth spectral envelope and can alter instruments as well as voices. Hosts
+should leave output headroom and check the processed signal for clipping.
 
-`chronobent-benchmark` prints CPU time relative to output duration, time to the
-first 4096 frames and maximum observed render-block time for synthetic material.
-Run it on the actual target, under representative contention, before choosing
-a queue budget. A fast development machine does not establish embedded deadlines.
-See [DESIGN.md](DESIGN.md) for the signal path and remaining quality work.
+`chronobent-benchmark` reports render time relative to output duration, time to
+the first 4096 frames and the longest observed render block. Measure on the
+intended hardware under representative load before choosing a queue size.
+See [DESIGN.md](DESIGN.md) for the signal path and [QUALITY.md](QUALITY.md) for
+measurements and listening procedures.
 
-## Source export
+## Source archives
 
-`export-files.txt` is the explicit source-package inventory. With Gitleaks
-installed, `python3 tools/export_source.py /path/to/new.zip` creates a deterministic
-source-only archive after scanning its exact contents. It includes no repository
-history, binaries, audio, build directories or consumer integration. An existing
-archive is refused. Review the selected source before publishing. The official repository is
-[nicolaswehmeyer/ChronoBent](https://github.com/nicolaswehmeyer/ChronoBent).
+`export-files.txt` lists the source package contents. With Gitleaks installed,
+`python3 tools/export_source.py /path/to/new.zip` scans those files and creates
+a deterministic archive. The destination must be new. The archive includes
+source, examples, tests, build files, documentation and the license.

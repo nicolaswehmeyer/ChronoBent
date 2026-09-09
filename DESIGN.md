@@ -17,14 +17,13 @@ accumulate ratio drift.
 | `sinc` | 96-tap, 1024-phase interpolated Blackman-windowed low-pass resampling |
 | `chronobent` | C ABI, validation, reset epochs, clipped source reads, ring storage and exact output length |
 
-There are no external DSP implementations or runtime plugins. Each instance
-owns all tables and working buffers. The standard C++ library is required;
-application file/audio APIs live exclusively in examples.
+Each instance owns its tables and working buffers. The standard C++ library is
+required. File and audio-device APIs belong to the examples.
 
 ## Phase and channel handling
 
 The automatic FFT window is the smallest power of two covering 40 ms (within
-the supported 512–8192 frame bounds). Synthesis uses an eighth-window hop,
+the supported 512 to 8192 frame bounds). Synthesis uses an eighth-window hop,
 reduced further when needed to keep the analysis hop within one quarter-window.
 Analysis centers are rounded from absolute positions. Phase advances use the
 actual integer distance between consecutive analysis frames, not a nominal
@@ -55,13 +54,12 @@ normalize the corresponding window products.
 This conservative detector does not solve arbitrary polyphonic transient
 separation. Dense material retains the tonal path with high-frequency spectral
 flux resets on rapidly growing bins. Switching paths can affect surrounding
-tones. Synthetic sparse clicks, mixtures and future listening sets must remain
-separate evidence classes. A more complete adaptive-resolution or harmonic/
-percussive analysis is future work, requiring new comparative listening results.
+tones. Sparse-click timing tests do not predict attack quality in dense mixes.
+Changes to this detector need listening tests on music as well as click tests.
 
 Optional formant preservation estimates a smoothed log spectral envelope with
-a tapered 1–2 ms cepstral lifter. Correction compares the envelope at the source
-bin and its final pitched frequency, with amplitude gain bounded to 0.25–4.
+a tapered 1 to 2 ms cepstral lifter. Correction compares the envelope at the source
+bin and its final pitched frequency, with amplitude gain bounded to 0.25 to 4.
 It improves the included synthetic vowel oracle, but is approximate for real
 voices and instruments and is not a source-specific formant tracker.
 
@@ -112,11 +110,11 @@ mixed callback sizes. Destruction stops and joins the worker before source
 storage can retire. A captured shared owner keeps playback alive for the native
 callback. The example requires always-lock-free scalar atomics at compile time.
 
-## Qualification still required
+## Evaluation
 
 Use blinded, level-controlled listening on vocals, exposed bass, percussion,
 full mixes, sustained instruments, stereo ambience and extreme ratios. Include
 short excerpts and switching behavior, rather than relying on one aggregate
 score. Record CPU tail latency, memory and missed deadlines on the intended
-hardware. Tests of static ratio epochs do not certify continuous automation,
-streaming input, a particular device or parity with a listening reference.
+hardware. Static-ratio tests do not cover every control transition or system audio
+deadline. See [QUALITY.md](QUALITY.md) for the measurement and listening procedure.
