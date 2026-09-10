@@ -40,7 +40,8 @@ typedef enum chronobent_status {
     CHRONOBENT_SOURCE_UNAVAILABLE = 4,
     CHRONOBENT_INVALID_AUDIO = 5,
     CHRONOBENT_NOT_RESET = 6,
-    CHRONOBENT_BUSY = 7
+    CHRONOBENT_BUSY = 7,
+    CHRONOBENT_CANCELLED = 8 /* Optional worker analysis was cancelled. */
 } chronobent_status;
 
 typedef struct chronobent_config {

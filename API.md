@@ -274,3 +274,13 @@ C handle; do not destroy it independently. Calls on a moved-from object return
 Complete compiled examples are [C](examples/processor_c.c),
 [C++](examples/processor_cpp.cpp), [WAV](examples/render_wav.cpp) and the
 [worker/queue player](examples/pitch_lab/player.cpp).
+
+## Optional monophonic tuning (0.6)
+
+The legacy processor ABI and source inventory remain compatible. The separate
+[`tuning.h`](include/chronobent/tuning.h) API and C++ wrapper provide recorded-source
+analysis, scales, manual notes and duration-preserving correction. See
+[TUNING.md](TUNING.md) for the full ownership, bounds, cancellation, allocation,
+source-error and integration contracts. Build with `CHRONOBENT_BUILD_TUNING=OFF`
+to omit the module. `CHRONOBENT_CANCELLED` is an appended status value (8); existing
+status numbers and public processor structs are unchanged.

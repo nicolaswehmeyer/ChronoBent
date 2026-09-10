@@ -8,7 +8,7 @@
 
 **Play a sample. Reimagine a track. Build something of your own.**
 
-[Instrument](#chronobent-instrument) · [FX](#chronobent-fx) · [Lab](#chronobent-lab) · [Build the SDK](#build) · [API](API.md) · [Releases](https://github.com/nicolaswehmeyer/ChronoBent/releases)
+[Instrument](#chronobent-instrument) · [FX](#chronobent-fx) · [Lab](#chronobent-lab) · [Note Studio](#note-studio) · [Build the SDK](#build) · [API](API.md) · [Releases](https://github.com/nicolaswehmeyer/ChronoBent/releases)
 
 </div>
 
@@ -42,8 +42,8 @@ interfaces. These are software tools; no physical hardware is required.
 
 ## Get ChronoBent
 
-**0.5.0 is a release candidate.** Source builds are available now. Lab 0.5.0 and
-Instrument/FX 0.5.0 universal packages are awaiting Apple notarization; their public
+**0.6.0 is a release candidate.** Source builds are available now. Lab 0.6.0 and
+Instrument/FX 0.6.0 universal packages are awaiting Apple notarization; their public
 binary download is not ready yet. [Previously verified Lab 0.2.0](https://github.com/nicolaswehmeyer/ChronoBent/releases/download/v0.2.0/ChronoBent-Lab-0.2.0-macOS-universal.dmg)
 remains available and has an earlier feature set.
 
@@ -96,6 +96,19 @@ still has that delay. Live input keeps normal speed. The **Time** knob applies
 to a captured loop, and is disabled in Live mode. Select an explicit bounce range
 because loops can continue indefinitely. See the [FX workflow and limits](plugin/README.md#chronobent-fx).
 
+## Note Studio
+
+Correct a recorded vocal or solo melody in **all three tools**. Analyze its pitch,
+choose a key and scale, preserve vibrato or correct drift, and drag individual
+notes to new targets. Switch between original and corrected audio explicitly.
+Lab can export the corrected source as a float WAV; plugins keep both versions
+and note edits in your project.
+
+Note Studio handles one melodic line with up to ±5 semitones of correction.
+FX uses a finished capture. It is not polyphonic separation or a low-latency
+microphone effect. [Open the workflow and SDK guide](TUNING.md) for controls,
+limits, ownership and a compiled C++ example.
+
 ## The DSP inside
 
 The same independent engine is available for your own player, editor or renderer.
@@ -146,6 +159,7 @@ The package is tested with static/shared builds on Linux, macOS and Windows.
 | CMake option | Default | Purpose |
 | --- | --- | --- |
 | `BUILD_SHARED_LIBS` | `OFF` | Shared library with exported C symbols |
+| `CHRONOBENT_BUILD_TUNING` | `ON` | Optional recorded-monophonic analysis and correction; OFF preserves the legacy-only SDK |
 | `CHRONOBENT_BUILD_TESTS` | `ON` | DSP, API, player, instrument, effect and renderer regressions |
 | `CHRONOBENT_BUILD_EXAMPLES` | `ON` | WAV renderer, benchmark and C/C++ consumers |
 | `CHRONOBENT_BUILD_PITCH_LAB` | `OFF` | Native macOS audition app |
@@ -243,8 +257,9 @@ setting. [API.md](API.md) documents exact windows, limits and control behavior.
 After creation, processor calls allocate nothing and take no locks, excluding
 work done by the source callback. Control changes and seeks can read history
 and regenerate tables, so they belong on the worker. The DSP starts no threads,
-performs no I/O and opens no audio device. Its working memory does not grow with
-track length.
+performs no I/O and opens no audio device. The legacy processor working memory does not grow with
+track length. The optional tuner preallocates derived state proportional to the
+recording length; see [its separate contract](TUNING.md).
 
 `BUSY` means a previous parameter fade must finish. Coalesce control changes and
 retry after rendering. Source failures preserve the returned valid prefix and
@@ -274,9 +289,9 @@ It loads the source into memory. On Windows, use `build/Release/chronobent-rende
 
 ## ChronoBent Lab
 
-Build the 0.5.0 app below while its universal package awaits notarization.
+Build the 0.6.0 app below while its universal package awaits notarization.
 It targets macOS 11 or later on Apple Silicon and Intel. The controls described
-here belong to 0.5.0; the earlier verified 0.2.0 download has fewer features.
+here belong to 0.6.0; the earlier verified 0.2.0 download has fewer features.
 
 Open a track, then press **Space** to play or pause. Drag the position slider to
 seek, or use the **arrow keys** to skip five seconds. Restart returns to the

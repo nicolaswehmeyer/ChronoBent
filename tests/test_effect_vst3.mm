@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Nicolas Wehmeyer
 #import <Cocoa/Cocoa.h>
+#include "tuning_state_fixture.hpp"
 #include "pluginterfaces/base/funknownimpl.h"
 #include "pluginterfaces/base/ibstream.h"
 #include "pluginterfaces/base/ipluginbase.h"
@@ -164,6 +165,34 @@ int main(int argc,char **argv) {
                 Host duplicate(factory,info.cid); duplicate.silent=true; state.position=0;
                 check(duplicate.component->setState(&state),"repeat VST3 captured state restore");
                 require(duplicate.render_many(delay+48000)==output,"deterministic VST3 restored audio");
+            }
+            // Exercise the format wrapper with dual-PCM 0.6 state and a 0.5
+            // source-only reference. No analysis is needed to reopen a project.
+            {
+                auto blob=tuning_fixture::parse([NSData dataWithBytes:state.bytes.data() length:state.bytes.size()],4);
+                const auto frames=[blob.metadata[@"frames"] unsignedLongLongValue];
+                NSData *original=blob.audio;NSMutableData *corrected=[original mutableCopy];
+                auto samples=static_cast<float *>(corrected.mutableBytes);for(size_t i=0;i<corrected.length/4;++i)samples[i]*=.5f;
+                blob.metadata[@"version"]=@2;blob.metadata[@"tuning"]=tuning_fixture::metadata(true,0,frames,69);
+                NSMutableData *both=[corrected mutableCopy];[both appendData:original];blob.audio=both;
+                const auto encoded=tuning_fixture::encode(blob,4);Stream tuned;
+                tuned.bytes.assign(static_cast<const uint8_t *>(encoded.bytes),static_cast<const uint8_t *>(encoded.bytes)+encoded.length);
+                Host restored(factory,info.cid);restored.silent=true;check(restored.component->setState(&tuned),"restore VST3 dual-PCM tuning project");
+                const auto actual=restored.render_many(delay+48000);
+                Stream saved;check(restored.component->getState(&saved),"save VST3 dual-PCM tuning project");
+                auto roundtrip=tuning_fixture::parse([NSData dataWithBytes:saved.bytes.data() length:saved.bytes.size()],4);
+                require([roundtrip.audio isEqualToData:both] && [roundtrip.metadata[@"tuning"][@"corrected"] boolValue],"VST3 retains both exact sources and tuning selection");
+                blob.metadata[@"version"]=@1;[blob.metadata removeObjectForKey:@"tuning"];blob.audio=corrected;
+                const auto reference_bytes=tuning_fixture::encode(blob,4);Stream reference;
+                reference.bytes.assign(static_cast<const uint8_t *>(reference_bytes.bytes),static_cast<const uint8_t *>(reference_bytes.bytes)+reference_bytes.length);
+                Host legacy(factory,info.cid);legacy.silent=true;check(legacy.component->setState(&reference),"restore legacy VST3 source-only project");
+                require(legacy.render_many(delay+48000)==actual,"VST3 plays selected corrected PCM exactly like its source-only reference");
+                NSMutableDictionary *settings=roundtrip.metadata[@"tuning"];settings[@"edits"]=@[@[@0,@(frames),@999]];
+                const auto rejected=tuning_fixture::encode(roundtrip,4);Stream malformed;
+                malformed.bytes.assign(static_cast<const uint8_t *>(rejected.bytes),static_cast<const uint8_t *>(rejected.bytes)+rejected.length);
+                require(restored.component->setState(&malformed)!=kResultOk,"VST3 rejects out-of-range tuning edit");
+                Stream preserved;check(restored.component->getState(&preserved),"save VST3 state after rejected tuning edit");
+                require(preserved.bytes==saved.bytes,"VST3 rejected tuning edit preserves complete previous project");
             }
             host.parameter(0,7.25); host.render();
             Stream before_bad; check(host.component->getState(&before_bad),"snapshot state before invalid input");

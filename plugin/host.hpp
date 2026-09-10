@@ -7,7 +7,7 @@
 class ChronoBentHost : public iplug::Plugin {
 public:
     using iplug::Plugin::Plugin;
-    virtual int StateLimit() const { return 185000000; }
+    virtual int StateLimit() const { return 370000000; }
     bool CanNavigateToURL(const char *);
     bool OnCanDownloadMIMEType(const char *) override { return false; }
     void *OpenWindow(void *) override;

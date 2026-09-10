@@ -4,6 +4,7 @@
 #include "IPlug_include_in_plug_src.h"
 #include "mac_audio.hpp"
 #include "json.hpp"
+#include "tuning_state.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -41,6 +42,7 @@ ChronoBentPlugin::ChronoBentPlugin(const InstanceInfo &info):ChronoBentHost(info
     mWorker=std::thread([this]{work();}); request(0);
 }
 ChronoBentPlugin::~ChronoBentPlugin() {
+    mTuningEditor.reset();
     { std::lock_guard<std::mutex> lock(mControl); mStop=true; mWake.notify_one(); }
     mWorker.join();
 }
@@ -52,27 +54,35 @@ Preparation ChronoBentPlugin::preparation() const {
 }
 void ChronoBentPlugin::request(int preset,const std::string &path) {
     std::lock_guard<std::mutex> lock(mControl);
-    mPreset=preset; mPath=path; mPending=preparation(); mQueued.store(++mRequest); mWake.notify_one();
+    mPreset=preset; mPath=path; mTunePending.reset();mPending=preparation(); mQueued.store(++mRequest); mWake.notify_one();
 }
 void ChronoBentPlugin::work() {
     uint64_t consumed=0;
     for(;;) {
         uint64_t revision; double rate; int preset; std::string path;
         Preparation parameters; std::shared_ptr<const Source> previous;
+        std::shared_ptr<const chronobent_host::TuneResult> tuning;bool corrected=false;
         {
             std::unique_lock<std::mutex> lock(mControl);
             mWake.wait(lock,[&]{return mStop || consumed!=mRequest;});
             if(mStop) return;
-            consumed=revision=mRequest; rate=mRate; preset=mPreset; path=mPath; parameters=mPending; previous=mSource;
+            consumed=revision=mRequest; rate=mRate; preset=mPreset; path=mPath; parameters=mPending; previous=mSource;tuning=mTunePending;corrected=mTunePendingCorrected;
         }
         try {
-            auto source=!path.empty() ? load_audio_file(path,rate) : preset>=0 ? factory_source(unsigned(preset),rate) :
+            std::shared_ptr<const Source> source;
+            if(tuning) {
+                auto candidate=std::make_shared<Source>();candidate->sample_rate=tuning->sample_rate;candidate->name=previous?previous->name:"Tuned melody";
+                candidate->stereo=*(corrected?tuning->corrected:tuning->original);
+                source=candidate->sample_rate==rate?candidate:resample_source(*candidate,rate);
+            }else source=!path.empty() ? load_audio_file(path,rate) : preset>=0 ? factory_source(unsigned(preset),rate) :
                 previous ? (previous->sample_rate==rate ? previous : resample_source(*previous,rate)) : factory_source(0,rate);
             std::lock_guard<std::mutex> lock(mControl);
             if(mStop) return;
             if(revision!=mRequest) continue;
             if(!mEngine->prepare(source,parameters)) throw std::runtime_error("Cannot prepare these sample settings");
             mSource=std::move(source); mApplied=parameters; mError.clear();
+            if(tuning){mTuneApplied=tuning;mTuneCorrected=corrected;mTunePending.reset();}
+            else if(!path.empty() || preset>=0){mTuneApplied.reset();mTuneCorrected=false;}
             mSubmitted.store(revision);
         } catch(const std::exception &e) {
             std::lock_guard<std::mutex> lock(mControl); if(revision==mRequest) { mError=e.what(); mSubmitted.store(revision); }
@@ -148,27 +158,49 @@ void ChronoBentPlugin::OnIdle() {
     const json state={{"ready",s.ready},{"preparing",s.preparing || mSubmitted.load()!=mQueued.load()},{"progress",s.progress},{"name",s.name},
         {"duration",s.duration},{"rate",s.sample_rate},{"voices",s.active_voices},{"notes",s.active_notes},{"peak",mPeak.load()},
         {"error",!mRateSupported.load()?"Use a host sample rate from 8 to 192 kHz":mOfflineTimeout.load()?"Preparation timed out. Wait until ready, then bounce again.":mError.empty()?s.error:mError},{"underruns",s.underruns},{"dropped",s.dropped_notes+mMidiOverflow.load()},
-        {"waveform",s.waveform},{"applied",encode(s.preparation)},{"revision",s.revision}};
+        {"waveform",s.waveform},{"tuned",bool(mTuneApplied && mTuneCorrected)},{"applied",encode(s.preparation)},{"revision",s.revision}};
     const auto text=state.dump(); SendArbitraryMsgFromDelegate(100,int(text.size()),text.data());
 }
 bool ChronoBentPlugin::OnMessage(int tag,int control,int size,const void *data) {
     (void)control; (void)size; (void)data;
+    if(tag==20) {show_tuning();return true;}
     if(tag==1) { request(-1); return true; }
     if(tag==2) { const auto path=choose_audio_file(); if(!path.empty()) request(-1,path); return true; }
     if(tag>=10 && tag<=12) { request(tag-10); return true; }
     return false;
+}
+chronobent_host::TuneDocument ChronoBentPlugin::tuning_document() const {
+    std::lock_guard<std::mutex> lock(mControl);if(!mSource)return {};
+    auto original=mTuneApplied?mTuneApplied->original:chronobent_host::Audio(mSource,&mSource->stereo);
+    return {original,mTuneApplied?mTuneApplied->sample_rate:mSource->sample_rate,mSource->name,mTuneApplied,mTuneCorrected};
+}
+bool ChronoBentPlugin::apply_tuning(std::shared_ptr<const chronobent_host::TuneResult> result,bool corrected) {
+    std::lock_guard<std::mutex> lock(mControl);if(!mSource || !result || mSubmitted.load()!=mQueued.load())return false;
+    const auto original=mTuneApplied?mTuneApplied->original:chronobent_host::Audio(mSource,&mSource->stereo);
+    if(result->original!=original || !result->corrected || result->corrected->size()!=original->size())return false;
+    mTunePending=std::move(result);mTunePendingCorrected=corrected;mPreset=-1;mPath.clear();mPending=preparation();
+    mQueued.store(++mRequest);mWake.notify_one();return true;
+}
+void ChronoBentPlugin::show_tuning() {
+    if(!mTuningEditor)mTuningEditor=std::make_unique<chronobent_host::MacTuningEditor>([this]{return tuning_document();},
+        [this](std::shared_ptr<const chronobent_host::TuneResult> result,bool corrected){return apply_tuning(std::move(result),corrected);});
+    mTuningEditor->show();
 }
 bool ChronoBentPlugin::SerializeState(IByteChunk &chunk) const {
     std::lock_guard<std::mutex> lock(mControl);
     try {
         std::array<double,kNumParams> values{};
         for(int i=0;i<kNumParams;++i) values[i]=GetParam(i)->Value();
-        const json state={{"version",1},{"params",values},{"applied",encode(mApplied)},
-            {"rate",mSource?mSource->sample_rate:mRate},{"name",mSource?mSource->name:"Glass Circuit"},
-            {"frames",mSource?mSource->stereo.size()/2:0}};
+        const auto audio=mTuneApplied?(mTuneCorrected?mTuneApplied->corrected:mTuneApplied->original):
+            mSource?chronobent_host::Audio(mSource,&mSource->stereo):nullptr;
+        const auto alternate=mTuneApplied?(mTuneCorrected?mTuneApplied->original:mTuneApplied->corrected):nullptr;
+        const json state={{"version",2},{"params",values},{"applied",encode(mApplied)},
+            {"rate",mTuneApplied?mTuneApplied->sample_rate:mSource?mSource->sample_rate:mRate},{"name",mSource?mSource->name:"Glass Circuit"},
+            {"frames",audio?audio->size()/2:0},{"tuning",chronobent_plugin::encode_tuning(mTuneApplied,mTuneCorrected)}};
         const auto text=state.dump(); const uint32_t magic=0x354e4243,length=uint32_t(text.size());
         chunk.Put(&magic); chunk.Put(&length); chunk.PutBytes(text.data(),int(text.size()));
-        if(mSource) chunk.PutBytes(mSource->stereo.data(),int(mSource->stereo.size()*sizeof(float)));
+        if(audio)chunk.PutBytes(audio->data(),int(audio->size()*sizeof(float)));
+        if(alternate)chunk.PutBytes(alternate->data(),int(alternate->size()*sizeof(float)));
         return true;
     } catch(...) { return false; }
 }
@@ -176,10 +208,10 @@ int ChronoBentPlugin::UnserializeState(const IByteChunk &chunk,int position) {
     try {
         uint32_t magic=0,length=0;
         position=chunk.Get(&magic,position); if(position<0 || magic!=0x354e4243) return -1;
-        position=chunk.Get(&length,position); if(position<0 || length>65536 || length>uint32_t(chunk.Size()-position)) return -1;
+        position=chunk.Get(&length,position); if(position<0 || length>1048576 || length>uint32_t(chunk.Size()-position)) return -1;
         std::string text(length,'\0'); position=chunk.GetBytes(text.data(),int(length),position); if(position<0) return -1;
         const auto state=json::parse(text);
-        if(state.at("version")!=1 || state.at("params").size()!=kNumParams) return -1;
+        if((state.at("version")!=1 && state.at("version")!=2) || state.at("params").size()!=kNumParams) return -1;
         const auto values=state.at("params").get<std::array<double,kNumParams>>();
         for(int i=0;i<kNumParams;++i) if(!std::isfinite(values[i]) || values[i]<GetParam(i)->GetMin() || values[i]>GetParam(i)->GetMax()) return -1;
         const auto parameters=decode(state.at("applied"));
@@ -190,13 +222,21 @@ int ChronoBentPlugin::UnserializeState(const IByteChunk &chunk,int position) {
 #else
         constexpr int trailer=0;
 #endif
-        if(uint64_t(chunk.Size()-position)!=frames*8+trailer) return -1;
+        const auto tuning=chronobent_plugin::decode_tuning(state.at("version")==2?state.at("tuning"):json(nullptr),frames);
+        if(uint64_t(chunk.Size()-position)!=frames*8*(tuning.present?2:1)+trailer) return -1;
         auto source=std::make_shared<Source>(); source->sample_rate=rate; source->name=state.at("name").get<std::string>();
         if(source->name.size()>4096) return -1;
         source->stereo.resize(std::size_t(frames)*2);
         if(frames) position=chunk.GetBytes(source->stereo.data(),int(frames*8),position);
         if(position<0) return -1;
         for(float v:source->stereo) if(!std::isfinite(v) || std::abs(v)>64) return -1;
+        chronobent_host::Audio alternate;
+        if(tuning.present) {
+            auto pcm=std::make_shared<std::vector<float>>(size_t(frames)*2);position=chunk.GetBytes(pcm->data(),int(frames*8),position);if(position<0)return -1;
+            for(float v:*pcm)if(!std::isfinite(v) || std::abs(v)>64)return -1;
+            alternate=std::move(pcm);
+        }
+        const auto restored=chronobent_plugin::restore_tuning(tuning,chronobent_host::Audio(source,&source->stereo),alternate,rate);
         if(!(parameters.tempo>=.5 && parameters.tempo<=2) || !(parameters.semitones>=-24 && parameters.semitones<=24) ||
            !(parameters.formant_scale==0 || (parameters.formant_scale>=.5 && parameters.formant_scale<=2)) ||
            !(parameters.envelope_ms>=1 && parameters.envelope_ms<=4) || parameters.transients>2 ||
@@ -204,6 +244,7 @@ int ChronoBentPlugin::UnserializeState(const IByteChunk &chunk,int position) {
         std::lock_guard<std::mutex> lock(mControl);
         for(int i=0;i<kNumParams;++i) GetParam(i)->Set(values[i]);
         mSource=frames?source:factory_source(0,mRate); mApplied=mPending=parameters;
+        mTuneApplied=restored;mTuneCorrected=tuning.corrected;mTunePending.reset();
         mPreset=-1; mPath.clear(); mQueued.store(++mRequest); mWake.notify_one(); return position;
     } catch(...) { return -1; }
 }

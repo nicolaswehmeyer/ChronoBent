@@ -1,5 +1,18 @@
 # Change log
 
+## 0.6.0 — recorded monophonic tuning
+
+- Optional C/C++ tuning API with periodicity/temporal analysis, scale correction,
+  manual notes, vibrato/drift controls and linked pitch-synchronous rendering.
+- Shared Note Studio in Lab, Instrument and FX. Explicit original/tuned selection,
+  asynchronous source-safe preparation and Lab float WAV export.
+- Version 2 plugin state retains original/corrected PCM and edit metadata; 0.5
+  source-only states still load. Host sample-rate changes retain canonical audio.
+- Legacy DSP processing, structs and source inventory retained. Tuning can be
+  excluded entirely; no analysis is added to existing processor calls.
+- Independent held-out vocal measurements and synthetic pitch/envelope checks;
+  bounded ±5 st tuning, with no commercial perceptual-equivalence claim.
+
 ## 0.5.0 - Release candidate
 
 - Add a macOS AU/VST3 sample instrument with four voices, three original factory

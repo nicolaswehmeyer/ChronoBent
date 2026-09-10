@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 #define PLUG_NAME "ChronoBent"
 #define PLUG_MFR "Nicolas Wehmeyer"
-#define PLUG_VERSION_HEX 0x00000500
-#define PLUG_VERSION_STR "0.5.0"
+#define PLUG_VERSION_HEX 0x00000600
+#define PLUG_VERSION_STR "0.6.0"
 #define PLUG_UNIQUE_ID 'ChBn'
 #define PLUG_MFR_ID 'NWeh'
 #define PLUG_URL_STR "https://github.com/nicolaswehmeyer/ChronoBent"

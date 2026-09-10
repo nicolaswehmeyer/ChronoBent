@@ -1,18 +1,20 @@
 # SPDX-License-Identifier: MIT
 # The pinned framework sets this file property in its first calling directory.
 # Repeat only the build property for this second target directory, not its source.
-set_source_files_properties(../mac_editor.mm ../mac_audio.mm
+set_source_files_properties(../mac_editor.mm ../mac_audio.mm ../../host/mac_tuning_editor.mm ../../host/mac_controls.mm
     "${IPLUG2_DIR}/IPlug/Extras/WebView/IPlugWebView_mac.mm"
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 iplug_add_plugin(ChronoBentFX
-    SOURCES ChronoBentFX.cpp ChronoBentFX.h config.h ../host.hpp ../mac_editor.mm ../mac_audio.mm ../mac_audio.hpp
+    SOURCES ChronoBentFX.cpp ChronoBentFX.h config.h ../host.hpp ../mac_editor.mm ../mac_audio.mm ../mac_audio.hpp ../tuning_state.cpp ../tuning_state.hpp
+        ../../host/mac_tuning_editor.mm ../../host/mac_controls.mm
     RESOURCES ../../LICENSE ../THIRD_PARTY_NOTICES.md
     WEB_RESOURCES resources/web/index.html resources/web/script.js resources/web/fx.css
         ../resources/web/style.css ../resources/web/controls.js
-    LINK chronobent-effect "-framework AVFoundation" "-framework Cocoa"
+    LINK chronobent-effect chronobent-tuning-host "-framework AVFoundation" "-framework Cocoa"
     UI WEBVIEW FORMATS AU VST3)
 foreach(format au vst3)
     target_compile_features(ChronoBentFX-${format} PRIVATE cxx_std_17)
+    target_compile_definitions(ChronoBentFX-${format} PRIVATE CHRONOBENT_TUNE_OBJC_PREFIX=ChronoBentEffect_${format})
     add_custom_command(TARGET ChronoBentFX-${format} POST_BUILD
         COMMAND /usr/bin/codesign --force --sign - --timestamp=none "$<TARGET_BUNDLE_DIR:ChronoBentFX-${format}>"
         COMMENT "Ad-hoc sign the complete local effect bundle" VERBATIM)

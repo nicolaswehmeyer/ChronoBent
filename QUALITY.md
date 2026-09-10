@@ -1,8 +1,61 @@
 # Quality measurements
 
-The 0.4.0 development version adds extended-range regressions to the retained
-0.3.0 synthetic and music-render evidence.
+The 0.6.0 candidate adds recorded-monophonic tuning. Earlier processor,
+extended-range and host observations below retain their original version scope.
 Blinded listening results and audio-device deadline measurements are still pending.
+
+## 0.6.0 monophonic correction
+
+The optional tuner is independent of existing global pitch/tempo processing.
+It targets recorded solo voice or melody, with linked mono/stereo processing,
+original duration, conservative unvoiced handling and a maximum ±5 st correction.
+Periodicity candidates and a temporal decoder reduce, but do not eliminate,
+octave mistakes. Pitch-synchronous resynthesis approximately preserves the source
+spectral envelope. No neural models or third-party DSP implementations are linked.
+
+A local evaluation used the 40 short solo-vocal recordings and F0 annotations in
+[vocadito](https://zenodo.org/records/5578807). Files 1–10 were the development
+split. Source hashes were frozen before evaluating files 11–40; the following
+30-file results were not used to change the algorithm. On 118,837 annotation
+frames, frame-weighted pitch accuracy within 50 cents was **88.33%**, voiced
+recall **90.58%**, unvoiced false-alarm rate **9.82%**, and octave-error rate
+**0.45%**. Per-file pitch accuracy ranged from **70.14% to 98.53%**. Median of
+per-file absolute voiced pitch errors was **6.11 cents**. These are detection
+metrics against the supplied annotations, not an assessment of natural sound or
+correct note intent. Voicing edges, breathy passages and octave errors need review.
+
+On the development Apple Silicon Mac, median analysis wall time across those
+30 recordings was **1.108% of source duration**; correction rendering was
+**0.111%**. These are offline wall-time ratios for this corpus and toolchain,
+not CPU utilization or live callback guarantees. Default correction output/input
+RMS ratios ranged **0.9904–0.9995**; the largest float peak was **1.0057**.
+Float processing has no limiter. Preserve headroom when playing or converting it.
+The dataset, annotations, raw reports and listening files stay outside this source
+package; only these bounded observations are published.
+
+Independent synthetic gates cover known tone frequency, missing fundamentals,
+vibrato retention and hard flattening, multiple notes with gaps, major-scale
+selection, opposite-phase stereo, 8/44.1/48/96/192 kHz inputs, finite output,
+source-error prefix/retry, cancellation, atomic invalid edits, exact duration,
+random seek/partition identity and allocation-free analysis/edit/render calls.
+A separate synthetic vowel has analytic formants at 700/1250/2600 Hz and a
+115 Hz base excitation detuned by 30 cents. At -5/-2/-0.3/+2/+5 st correction,
+gain-fitted harmonic-envelope relative L2 error was **2.18–5.80%** and RMS ratio
+**0.856–0.987**. C++ gates independently enforce error below 10%, RMS ratio
+0.8–1.1 and finite peaks below unity at -5/-0.3/+5 st. This model tests a bounded
+spectral property; it does not establish formant transparency on real singing.
+Wider pitch-synchronous shifts are excluded because prototype octave shifts
+lost fundamental energy. The legacy processor's separate wider range remains.
+
+Host tests check cancelled/replaced sources, immutable completed results,
+source-error recovery, reanalysis with saved manual edits and concurrent observers.
+Native Note Studio tests exercise analysis, controls, manual note selection,
+original/tuned switching and editor reopen. Instrument and FX AU tests render a
+manual 225 Hz-to-MIDI-58 change at approximately 233.05 Hz, retain both PCMs and
+edits across project restore and host-rate changes, and reject malformed packets
+without changing state. FX VST3 also checks dual-source and old source-only state.
+Lab exports exact float32 samples and preserves an existing file on export failure.
+These automated checks do not replace direct DAW sessions or blinded listening.
 
 ## Run the measurements
 

@@ -24,6 +24,19 @@ jobs:
       - run: cmake -S tests/consumer -B build-consumer -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${{ github.workspace }}/install"
       - run: cmake --build build-consumer --config Release --parallel 2
       - run: ctest --test-dir build-consumer -C Release --output-on-failure
+  tuning-off:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: cmake -S . -B build-off -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DCHRONOBENT_BUILD_TUNING=OFF
+      - run: cmake --build build-off --parallel 2
+      - run: ctest --test-dir build-off --output-on-failure
+      - run: cmake --install build-off --prefix install-off
+      - run: cmake -S tests/consumer -B consumer-off -DCMAKE_PREFIX_PATH="${{ github.workspace }}/install-off"
+      - run: cmake --build consumer-off --parallel 2
+      - run: ctest --test-dir consumer-off --output-on-failure
   sanitize:
     runs-on: ubuntu-latest
     steps:

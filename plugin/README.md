@@ -4,7 +4,7 @@ A four-voice sample instrument for macOS AU and VST3. Start with Glass Circuit,
 Soft Current or Copper Bloom, or load your own sound. Shape its pitch, time and
 timbre, press **Apply Sound**, then play it from MIDI or the on-screen keyboard.
 
-The 0.5.0 binaries are release candidates awaiting Apple notarization. The source
+The 0.6.0 binaries are release candidates awaiting Apple notarization. The source
 build and the tests below are available now. macOS 11 or later; Apple Silicon and
 Intel. AU is the format for Logic Pro; Ableton Live can load VST3 or AU on macOS.
 Automated AU/VST3 and native host tests do not establish testing inside every DAW
@@ -26,7 +26,7 @@ version. Direct Logic Pro and Ableton Live session checks remain outstanding.
   Balanced or Detailed analysis. Longer windows help resolve low fundamentals.
 - **Performance:** velocity, four voices with oldest-voice stealing, attack,
   release, loop, MIDI sustain (CC64), all-notes-off (CC123), all-sound-off (CC120).
-  Pitch wheel and MPE are not implemented in 0.5.0.
+  Pitch wheel and MPE are not implemented in 0.6.0.
 
 Drag a knob vertically; hold Shift for fine adjustment. Double-click to reset,
 use arrow keys on a focused knob, or type an exact value beneath it. The computer
@@ -179,3 +179,16 @@ auval -v aufx ChFx NWeh
 `host.hpp`, `mac_editor.mm`, native test fixtures and the web control primitives
 are shared between the two plugin variants. Each variant owns its engine,
 parameters and project state. No device adapter is included in either format.
+
+## Note Studio (0.6)
+
+Open **Note Studio** after loading an Instrument sample or finishing an FX capture.
+Analyze, select key/scale, adjust correction/vibrato/drift, or drag individual
+notes. **Use tuned audio** commits a completed result; **Use original audio**
+restores its source. Tuning runs on a worker, within ±5 semitones, for a single
+voice or melody. FX live input is not passed through this recorded-source tuner.
+
+Projects store original and corrected PCM plus controls and note edits. Source-only
+0.5 states remain readable; a dual-source 0.6 state needs 0.6 or later. Sample-rate
+changes retain the canonical source; new samples/captures clear stale analysis.
+Read the [shared workflow/API guide](../TUNING.md) and [quality limits](../QUALITY.md).

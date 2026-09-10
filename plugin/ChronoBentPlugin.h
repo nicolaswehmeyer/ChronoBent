@@ -3,6 +3,7 @@
 #pragma once
 #include "host.hpp"
 #include "instrument.hpp"
+#include "../host/mac_tuning_editor.hpp"
 #include <condition_variable>
 #include <mutex>
 #include <thread>
@@ -21,6 +22,9 @@ public:
     int UnserializeState(const IByteChunk &,int) override;
 private:
     chronobent_instrument::Preparation preparation() const;
+    chronobent_host::TuneDocument tuning_document() const;
+    bool apply_tuning(std::shared_ptr<const chronobent_host::TuneResult>,bool corrected);
+    void show_tuning();
     void request(int preset,const std::string &path={});
     void work();
     void midi(const IMidiMsg &) noexcept;
@@ -35,6 +39,9 @@ private:
     double mRate=48000;
     chronobent_instrument::Preparation mPending,mApplied;
     std::shared_ptr<const chronobent_instrument::Source> mSource;
+    std::shared_ptr<const chronobent_host::TuneResult> mTuneApplied,mTunePending;
+    bool mTuneCorrected=false,mTunePendingCorrected=false;
+    std::unique_ptr<chronobent_host::MacTuningEditor> mTuningEditor;
     std::unique_ptr<chronobent_instrument::Engine> mEngine;
     std::thread mWorker;
     std::array<IMidiMsg,512> mMidi{};

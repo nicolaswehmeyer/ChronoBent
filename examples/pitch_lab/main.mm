@@ -3,6 +3,9 @@
 #import <Cocoa/Cocoa.h>
 #import <AVFoundation/AVFoundation.h>
 #include "player.hpp"
+#include "../../host/mac_tuning_editor.hpp"
+#include "../../host/mac_wav_export.hpp"
+#import "../../host/mac_controls.hpp"
 #include "chronobent/chronobent.h"
 #include <cmath>
 #include <array>
@@ -65,29 +68,6 @@ static int audioSelfTest() {
     return 0;
 }
 
-// Keep native slider tracking, keyboard access and accessibility, with a
-// deterministic drawing path that also works in offscreen view tests.
-@interface LabSliderCell : NSSliderCell
-@end
-@implementation LabSliderCell
-- (void)drawBarInside:(NSRect)rect flipped:(BOOL)flipped {
-    (void)flipped;
-    rect.origin.y=NSMidY(rect)-2; rect.size.height=4;
-    [[NSColor colorWithCalibratedWhite:.32 alpha:self.enabled ? 1 : .5] setFill];
-    [[NSBezierPath bezierPathWithRoundedRect:rect xRadius:2 yRadius:2] fill];
-}
-- (void)drawKnob:(NSRect)rect {
-    rect=NSMakeRect(NSMidX(rect)-7,NSMidY(rect)-7,14,14);
-    [(self.enabled ? NSColor.controlAccentColor : NSColor.disabledControlTextColor) setFill];
-    [[NSBezierPath bezierPathWithOvalInRect:rect] fill];
-}
-@end
-@interface LabSlider : NSSlider
-@end
-@implementation LabSlider
-+ (Class)cellClass { return LabSliderCell.class; }
-@end
-
 // An overview of decoded samples. Drawing reads this immutable summary only.
 @interface WaveformView : NSView {
     std::vector<std::pair<float,float>> _peaks;
@@ -149,6 +129,10 @@ static int audioSelfTest() {
     NSTimer *_timer;
     std::shared_ptr<audition::Player> _player;
     std::shared_ptr<const std::vector<float>> _decoded;
+    std::unique_ptr<chronobent_host::MacTuningEditor> _tuningEditor;
+    std::shared_ptr<const chronobent_host::TuneResult> _tuningApplied;
+    NSButton *_noteStudio,*_exportTune;
+    BOOL _tuned;
     double _sampleRate;
     BOOL _playing;
 }
@@ -209,11 +193,15 @@ static NSButton *button(NSString *text, id owner, SEL action) {
     _profile.target=self; _profile.action=@selector(profileChanged:);
     [_profile setAccessibilityLabel:@"Analysis profile"]; _profile.toolTip=@"Longer windows resolve lower partials but can soften attacks. Changing the profile restarts processing at the current position."; [view addSubview:_profile];
     _open=button(@"Open audio...",self,@selector(openAudio:)); _open.frame=NSMakeRect(30,614,130,34); [view addSubview:_open];
+    _noteStudio=button(@"Note Studio…",self,@selector(openNoteStudio:));_noteStudio.frame=NSMakeRect(645,614,140,34);[view addSubview:_noteStudio];
+    _noteStudio.toolTip=@"Tune a recorded solo voice or melody. The original stays available for A/B.";_noteStudio.enabled=NO;
+    _exportTune=button(@"Export WAV…",self,@selector(exportTuned:));_exportTune.frame=NSMakeRect(792,614,138,34);_exportTune.enabled=NO;[view addSubview:_exportTune];
+    _exportTune.toolTip=@"Export the selected tuned source before the Lab audition controls. The original file stays untouched unless you choose to replace it.";
     _fileLabel=label(@"Choose a track to begin",14,NSFontWeightMedium);
-    _fileLabel.lineBreakMode=NSLineBreakByTruncatingMiddle; _fileLabel.frame=NSMakeRect(178,619,746,24); [view addSubview:_fileLabel];
+    _fileLabel.lineBreakMode=NSLineBreakByTruncatingMiddle; _fileLabel.frame=NSMakeRect(178,619,455,24); [view addSubview:_fileLabel];
     _waveform=[[WaveformView alloc] initWithFrame:NSMakeRect(34,477,892,120)];
     [_waveform setAccessibilityLabel:@"Source waveform overview"]; [view addSubview:_waveform];
-    _timeline=[LabSlider sliderWithValue:0 minValue:0 maxValue:1 target:self action:@selector(seekChanged:)];
+    _timeline=[CBNativeSlider sliderWithValue:0 minValue:0 maxValue:1 target:self action:@selector(seekChanged:)];
     _timeline.frame=NSMakeRect(34,445,892,24); _timeline.continuous=NO; _timeline.enabled=NO;
     [_timeline setAccessibilityLabel:@"Track position"]; _timeline.toolTip=@"Drag to seek. Left and right arrow keys skip five seconds."; [view addSubview:_timeline];
     _timeLabel=label(@"00:00  /  00:00",13,NSFontWeightMedium);
@@ -226,7 +214,7 @@ static NSButton *button(NSString *text, id owner, SEL action) {
     NSButton *nextButton=button(@"Forward 5s",self,@selector(skipForward:)); nextButton.frame=NSMakeRect(252,366,110,36); [view addSubview:nextButton];
     NSButton *restart=button(@"Restart",self,@selector(restart:)); restart.frame=NSMakeRect(366,366,100,36); [view addSubview:restart];
     _gainLabel=label(@"Output: -9.0 dB",11,NSFontWeightMedium); _gainLabel.frame=NSMakeRect(504,395,198,18); [view addSubview:_gainLabel];
-    _gain=[LabSlider sliderWithValue:-9 minValue:-18 maxValue:0 target:self action:@selector(outputChanged:)];
+    _gain=[CBNativeSlider sliderWithValue:-9 minValue:-18 maxValue:0 target:self action:@selector(outputChanged:)];
     _gain.frame=NSMakeRect(504,373,198,23); _gain.continuous=YES;
     [_gain setAccessibilityLabel:@"Output gain in decibels"]; _gain.toolTip=@"Leave headroom for processed peaks. This gain applies equally to bypass and processed audio."; [view addSubview:_gain];
     _bypass=[NSButton checkboxWithTitle:@"Bypass processing" target:self action:@selector(pitchChanged:)];
@@ -241,19 +229,19 @@ static NSButton *button(NSString *text, id owner, SEL action) {
         title.frame=NSMakeRect(20,173,244,20); [card addSubview:title];
     }
     _pitchLabel=label(@"+0.00 st",32,NSFontWeightLight); _pitchLabel.frame=NSMakeRect(54,259,244,44); [view addSubview:_pitchLabel];
-    _pitch=[LabSlider sliderWithValue:0 minValue:-48 maxValue:48 target:self action:@selector(pitchChanged:)];
+    _pitch=[CBNativeSlider sliderWithValue:0 minValue:-48 maxValue:48 target:self action:@selector(pitchChanged:)];
     _pitch.frame=NSMakeRect(54,221,244,25); _pitch.continuous=YES; _pitch.enabled=NO;
     [_pitch setAccessibilityLabel:@"Pitch in semitones"]; _pitch.toolTip=@"Transpose up or down one octave at the selected speed."; [view addSubview:_pitch];
     NSButton *reset=button(@"Reset pitch",self,@selector(resetPitch:)); reset.frame=NSMakeRect(50,163,118,30); [view addSubview:reset];
     _tempoLabel=label(@"100.00%",32,NSFontWeightLight); _tempoLabel.frame=NSMakeRect(358,259,244,44); [view addSubview:_tempoLabel];
-    _tempo=[LabSlider sliderWithValue:1 minValue:.5 maxValue:2 target:self action:@selector(pitchChanged:)];
+    _tempo=[CBNativeSlider sliderWithValue:1 minValue:.5 maxValue:2 target:self action:@selector(pitchChanged:)];
     _tempo.frame=NSMakeRect(358,221,244,25); _tempo.continuous=YES; _tempo.enabled=NO;
     [_tempo setAccessibilityLabel:@"Playback speed ratio"]; _tempo.toolTip=@"50% to 200%. Master Tempo keeps the selected key."; [view addSubview:_tempo];
     _master=[NSButton checkboxWithTitle:@"Master Tempo: keep key" target:self action:@selector(pitchChanged:)];
     _master.state=NSControlStateValueOn; _master.frame=NSMakeRect(357,193,248,24); [view addSubview:_master];
     NSButton *resetSpeed=button(@"Reset speed",self,@selector(resetSpeed:)); resetSpeed.frame=NSMakeRect(354,155,126,30); [view addSubview:resetSpeed];
     _timbreLabel=label(@"Follows pitch",27,NSFontWeightLight); _timbreLabel.frame=NSMakeRect(662,259,244,44); [view addSubview:_timbreLabel];
-    _timbre=[LabSlider sliderWithValue:0 minValue:-12 maxValue:12 target:self action:@selector(pitchChanged:)];
+    _timbre=[CBNativeSlider sliderWithValue:0 minValue:-12 maxValue:12 target:self action:@selector(pitchChanged:)];
     _timbre.frame=NSMakeRect(662,221,244,25); _timbre.continuous=YES; _timbre.enabled=NO;
     [_timbre setAccessibilityLabel:@"Formant shift in semitones"]; _timbre.toolTip=@"Shift the spectral envelope independently. Zero preserves the original envelope."; [view addSubview:_timbre];
     _formants=[NSButton checkboxWithTitle:@"Independent formants" target:self action:@selector(pitchChanged:)];
@@ -264,7 +252,7 @@ static NSButton *button(NSString *text, id owner, SEL action) {
     _transients.selectedSegment=1; _transients.frame=NSMakeRect(186,101,266,26);
     [_transients setAccessibilityLabel:@"Transient handling"]; _transients.toolTip=@"Smooth retains phase continuity. Crisp emphasizes onsets. Mixed protects sustained low frequencies during onsets."; [view addSubview:_transients];
     _envelopeLabel=label(@"Envelope: 2.00 ms",12,NSFontWeightMedium); _envelopeLabel.frame=NSMakeRect(504,103,165,22); [view addSubview:_envelopeLabel];
-    _envelope=[LabSlider sliderWithValue:2 minValue:1 maxValue:4 target:self action:@selector(pitchChanged:)];
+    _envelope=[CBNativeSlider sliderWithValue:2 minValue:1 maxValue:4 target:self action:@selector(pitchChanged:)];
     _envelope.frame=NSMakeRect(678,101,246,26); _envelope.continuous=YES;
     [_envelope setAccessibilityLabel:@"Envelope resolution in milliseconds"]; _envelope.toolTip=@"Higher values retain finer spectral envelope detail. This is not an audio delay."; [view addSubview:_envelope];
     _statusLabel=label(@"Open a local audio file. Playback starts when you press Play.",12,NSFontWeightRegular);
@@ -344,11 +332,49 @@ static NSButton *button(NSString *text, id owner, SEL action) {
             dispatch_async(dispatch_get_main_queue(), ^{
                 self->_open.enabled=YES;
                 if(failure) { self->_statusLabel.stringValue=@"Choose another audio file."; [self showError:failure]; return; }
-                self->_decoded=result; self->_sampleRate=rate;
+                self->_decoded=result; self->_sampleRate=rate;self->_tuningApplied.reset();self->_tuned=NO;self->_exportTune.enabled=NO;self->_noteStudio.enabled=rate>0 && result->size()/2<=rate*600;
                 self->_fileLabel.stringValue=url.lastPathComponent;
                 [self->_waveform setAudio:*self->_decoded]; self->_timeline.doubleValue=0;
                 if([self prepare]) { self->_play.enabled=YES; self->_timeline.enabled=YES; [self pitchChanged:nil]; self->_statusLabel.stringValue=@"Ready. Use headphones and compare Bypass. Leave output headroom for processed peaks."; }
             });
+        });
+    }];
+}
+- (chronobent_host::TuneDocument)tuningDocument {
+    if(!_decoded || !_open.enabled || _decoded->size()/2>_sampleRate*600)return {};
+    return {_tuningApplied?_tuningApplied->original:_decoded,_sampleRate,_fileLabel.stringValue.UTF8String,_tuningApplied,bool(_tuned)};
+}
+- (BOOL)applyTuning:(std::shared_ptr<const chronobent_host::TuneResult>)result corrected:(BOOL)corrected {
+    if(!result || result->original!=[self tuningDocument].original || result->sample_rate!=_sampleRate)return NO;
+    const auto oldAudio=_decoded;const auto oldResult=_tuningApplied;const BOOL oldTuned=_tuned,resume=_playing;
+    const double position=_player?_player->source_position()/_sampleRate:0;
+    _decoded=corrected?result->corrected:result->original;_tuningApplied=std::move(result);_tuned=corrected;
+    if(![self prepare]){_decoded=oldAudio;_tuningApplied=oldResult;_tuned=oldTuned;[self prepare];return NO;}
+    [_waveform setAudio:*_decoded];[self seekTo:position];_resumeAfterSeek=resume;_exportTune.enabled=corrected;
+    return YES;
+}
+- (void)openNoteStudio:(id)sender {
+    (void)sender;if(![self tuningDocument].original)return;
+    if(!_tuningEditor) {
+        __weak PitchLab *weak=self;
+        _tuningEditor=std::make_unique<chronobent_host::MacTuningEditor>([weak]{auto strong=weak;return strong?[strong tuningDocument]:chronobent_host::TuneDocument{};},
+            [weak](std::shared_ptr<const chronobent_host::TuneResult> result,bool corrected){return bool([weak applyTuning:std::move(result) corrected:corrected]);});
+    }
+    _tuningEditor->show();
+}
+- (void)exportTuned:(id)sender {
+    (void)sender;if(!_tuned || !_tuningApplied)return;
+    NSSavePanel *panel=[NSSavePanel savePanel];panel.allowedFileTypes=@[@"wav"];
+    panel.nameFieldStringValue=[_fileLabel.stringValue.stringByDeletingPathExtension stringByAppendingString:@"-tuned.wav"];
+    panel.message=@"Export the selected tuned source before Lab's pitch, time, timbre and output gain controls.";
+    const auto audio=_decoded;const double rate=_sampleRate;
+    [panel beginSheetModalForWindow:_window completionHandler:^(NSModalResponse response) {
+        if(response!=NSModalResponseOK)return;self->_exportTune.enabled=NO;self->_statusLabel.stringValue=@"Exporting tuned WAV…";
+        const std::string path=panel.URL.path.UTF8String;
+        dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED,0),^{
+            std::string error;const bool success=chronobent_host::export_wav(audio,rate,path,error);
+            NSString *message=success?@"Tuned WAV exported.":[NSString stringWithUTF8String:error.c_str()];
+            dispatch_async(dispatch_get_main_queue(),^{self->_exportTune.enabled=self->_tuned;self->_statusLabel.stringValue=message;if(!success)[self showError:message];});
         });
     }];
 }
@@ -472,6 +498,23 @@ static NSButton *button(NSString *text, id owner, SEL action) {
     if(!waitForSeek()) return 6;
     [self tick:nil];
     if(!_pitch.enabled || !_timbre.enabled || _player->source_position()!=48000*6 || _timeline.doubleValue!=.5) return 7;
+    _noteStudio.enabled=YES;[self openNoteStudio:nil];
+    if(!_tuningEditor || !_tuningEditor->self_test(std::string(directory.UTF8String)+"/note-studio.png"))return 16;
+    _tuningEditor->close();
+    if(!_tuningApplied || _tuned || _decoded!=_tuningApplied->original)return 17;
+    std::string exportError;const std::string exportPath=std::string(directory.UTF8String)+"/tuned.wav";
+    if(!chronobent_host::export_wav(_tuningApplied->corrected,_sampleRate,exportPath,exportError))return 18;
+    NSError *readError=nil;AVAudioFile *exported=[[AVAudioFile alloc] initForReading:[NSURL fileURLWithPath:[NSString stringWithUTF8String:exportPath.c_str()]] commonFormat:AVAudioPCMFormatFloat32 interleaved:NO error:&readError];
+    if(!exported || exported.length!=AVAudioFramePosition(_decoded->size()/2) || exported.processingFormat.sampleRate!=_sampleRate)return 19;
+    AVAudioPCMBuffer *exportBuffer=[[AVAudioPCMBuffer alloc] initWithPCMFormat:exported.processingFormat frameCapacity:8192];
+    for(size_t first=0;first<_decoded->size()/2;) {
+        if(![exported readIntoBuffer:exportBuffer error:&readError] || !exportBuffer.frameLength)return 20;
+        for(size_t i=0;i<exportBuffer.frameLength;++i)for(unsigned c=0;c<2;++c)if(exportBuffer.floatChannelData[c][i]!=(*_tuningApplied->corrected)[(first+i)*2+c])return 21;
+        first+=exportBuffer.frameLength;
+    }
+    const auto beforeExport=[NSData dataWithContentsOfFile:[NSString stringWithUTF8String:exportPath.c_str()]];
+    auto invalidExport=std::make_shared<std::vector<float>>(100,0);(*invalidExport)[50]=NAN;
+    if(chronobent_host::export_wav(invalidExport,_sampleRate,exportPath,exportError) || ![[NSData dataWithContentsOfFile:[NSString stringWithUTF8String:exportPath.c_str()]] isEqualToData:beforeExport])return 22;
     if(!snapshot(@"loaded.png")) return 8;
     [self restart:nil]; if(!waitForSeek() || _player->source_position()!=0) return 9;
     [self skipForward:nil]; if(!waitForSeek() || _player->source_position()!=48000*5) return 10;
@@ -486,7 +529,7 @@ static NSButton *button(NSString *text, id owner, SEL action) {
     return 0;
 }
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication *)sender { (void)sender; return YES; }
-- (void)applicationWillTerminate:(NSNotification *)notification { (void)notification; [_timer invalidate]; [self stop]; }
+- (void)applicationWillTerminate:(NSNotification *)notification { (void)notification; [_timer invalidate]; _tuningEditor.reset();[self stop]; }
 @end
 int main(int argc,const char *argv[]) {
     @autoreleasepool {
