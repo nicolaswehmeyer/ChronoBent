@@ -75,6 +75,16 @@ after signature removal **and normalization of the signature-related `__LINKEDIT
 virtual size**, not as raw unsigned files. No code or data bytes are normalized.
 The original failed comparison and exact subsequent scope are retained locally.
 
+A contributed 0.6 efficiency change (Domenico Valentino) evaluates vocoder phase
+only at bins whose propagation consumes it, from retained analysis spectra, and
+reuses sinc coefficients for consecutive equal fractional source positions. All
+32 local music renders are byte-identical to the previous engine and to the
+frozen 0.5 renderer, and the exact block-partition tests add an octave case for
+coefficient reuse. Three alternating runs of the ten stereo benchmark cases
+measured 4% to 10% lower best render time (9% in total) on one Apple Silicon
+machine. Memory is unchanged: previous spectra replace two phase arrays of the
+same size. This is a local throughput observation, not a device measurement.
+
 ## Run the measurements
 
 Build with examples and tests enabled, then run:

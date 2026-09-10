@@ -150,6 +150,7 @@ extern "C" chronobent_status chronobent_render(chronobent *instance, chronobent_
         }
     } else {
         float *coefficients = instance->coefficients.data();
+        double coefficient_fraction = -1;
         for (; *produced < frames; ++*produced, ++instance->position) {
             // Absolute indexing avoids incremental ratio drift between blocks.
             const double source = static_cast<double>(instance->position) * instance->pitch;
@@ -157,7 +158,15 @@ extern "C" chronobent_status chronobent_render(chronobent *instance, chronobent_
             const bool resample = instance->pitch != 1;
             const auto status = instance->ensure(center + (resample ? instance->sinc.right() : 0), reader, user);
             if (status != CHRONOBENT_OK) return status;
-            if (resample) instance->sinc.coefficients(source - static_cast<double>(center), coefficients);
+            if (resample) {
+                const double fraction = source - static_cast<double>(center);
+                // Repeated phases use identical coefficients; retain their exact
+                // arithmetic while avoiding redundant work (notably pitch=2).
+                if (fraction != coefficient_fraction) {
+                    instance->sinc.coefficients(fraction, coefficients);
+                    coefficient_fraction = fraction;
+                }
+            }
             // Share ring addressing across stereo channels without changing the
             // tap accumulation order. No fast math or platform-specific SIMD.
             if (resample && channels == 2) {

@@ -16,6 +16,10 @@
   formants) prepare the sound by themselves after a settled editor or host
   change; Apply Sound remains an immediate manual re-preparation. Reopened
   projects prepare the sound their controls show.
+- Vocoder phase is evaluated only at bins that propagate it, from retained
+  analysis spectra, and sinc coefficients are reused for consecutive equal
+  fractional source positions. Output stays byte-identical; render time fell
+  about 9% locally. Contributed by Domenico Valentino.
 
 ## 0.5.0 - Release candidate
 
