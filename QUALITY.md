@@ -57,6 +57,24 @@ without changing state. FX VST3 also checks dual-source and old source-only stat
 Lab exports exact float32 samples and preserves an existing file on export failure.
 These automated checks do not replace direct DAW sessions or blinded listening.
 
+### 0.6 legacy compatibility and portability
+
+All 29 generated mono hashes and 32 retained music renders match the 0.5
+renderer exactly on the release Mac. Builds and installed C/C++ consumers pass
+with tuning ON and OFF; OFF exports no tuning symbols. Old-header C/C++ examples
+also run against the new shared library. The existing DSP units (apart from the
+version/status entry point), player, instrument engine and effect engine remain
+byte-identical source files.
+
+The initial cross-platform CI exposed GCC indentation warnings and MSVC integer
+zero-to-float fill warnings. The portability follow-up changes only statement
+layout and zero literal types. Its universal tuning object is byte-identical to
+the frozen candidate, preserving the held-out algorithm identity. Clarification
+of that follow-up commit's executable comparison: the five desktop binaries match
+after signature removal **and normalization of the signature-related `__LINKEDIT`
+virtual size**, not as raw unsigned files. No code or data bytes are normalized.
+The original failed comparison and exact subsequent scope are retained locally.
+
 ## Run the measurements
 
 Build with examples and tests enabled, then run:
