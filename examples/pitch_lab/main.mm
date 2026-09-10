@@ -241,7 +241,7 @@ static NSButton *button(NSString *text, id owner, SEL action) {
         title.frame=NSMakeRect(20,173,244,20); [card addSubview:title];
     }
     _pitchLabel=label(@"+0.00 st",32,NSFontWeightLight); _pitchLabel.frame=NSMakeRect(54,259,244,44); [view addSubview:_pitchLabel];
-    _pitch=[LabSlider sliderWithValue:0 minValue:-12 maxValue:12 target:self action:@selector(pitchChanged:)];
+    _pitch=[LabSlider sliderWithValue:0 minValue:-48 maxValue:48 target:self action:@selector(pitchChanged:)];
     _pitch.frame=NSMakeRect(54,221,244,25); _pitch.continuous=YES; _pitch.enabled=NO;
     [_pitch setAccessibilityLabel:@"Pitch in semitones"]; _pitch.toolTip=@"Transpose up or down one octave at the selected speed."; [view addSubview:_pitch];
     NSButton *reset=button(@"Reset pitch",self,@selector(resetPitch:)); reset.frame=NSMakeRect(50,163,118,30); [view addSubview:reset];
@@ -445,6 +445,7 @@ static NSButton *button(NSString *text, id owner, SEL action) {
         NSData *png=[image representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
         return bool([png writeToFile:[directory stringByAppendingPathComponent:name] options:NSDataWritingWithoutOverwriting error:nil]);
     };
+    if(_pitch.minValue!=-48 || _pitch.maxValue!=48 || _timbre.minValue!=-12 || _timbre.maxValue!=12) return 15;
     if(_pitch.enabled || _tempo.enabled || _timeline.enabled || _timbre.enabled || _play.enabled) return 3;
     if(!snapshot(@"empty.png")) return 4;
     std::vector<float> pcm(48000*12*2);
@@ -478,6 +479,7 @@ static NSButton *button(NSString *text, id owner, SEL action) {
     [_profile selectItemAtIndex:2]; [self profileChanged:nil];
     if(!waitForSeek() || _player->frames()!=48000*12 || _player->source_position()!=0) return 12;
     _bypass.state=NSControlStateValueOn; [self pitchChanged:nil];
+    if(_pitch.minValue!=-48 || _pitch.maxValue!=48 || _timbre.minValue!=-12 || _timbre.maxValue!=12) return 15;
     if(_pitch.enabled || _tempo.enabled || _timbre.enabled || _transients.enabled) return 13;
     [self stop];
     std::printf("Native offscreen UI: empty/loaded controls, bounds, seek, skips, profile and bypass passed; images: %s\n",directory.UTF8String);

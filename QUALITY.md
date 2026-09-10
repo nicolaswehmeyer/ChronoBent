@@ -1,6 +1,7 @@
 # Quality measurements
 
-Version 0.3.0 has synthetic regression coverage and local music-render diagnostics.
+The 0.4.0 development version adds extended-range regressions to the retained
+0.3.0 synthetic and music-render evidence.
 Blinded listening results and audio-device deadline measurements are still pending.
 
 ## Run the measurements
@@ -43,6 +44,51 @@ Player tests cover half, double and fractional speeds with Master Tempo on and
 off, source-position continuity, mixed 16 to 4096-frame callbacks, pause, bypass,
 end of source and thread teardown. These tests use synthetic audio and do not
 measure system audio deadlines.
+
+## 0.4.0 pitch-range measurements
+
+Run `tools/measure_matrix.py build/chronobent-render new-output --wide` with
+NumPy installed as below. The full report retains 306 renders: the original
+162 cases, 120 extended-range tone cases, 15 stopband cases and nine bass/window
+diagnostics. The extended tone grid covers 8, 44.1, 48, 96 and 192 kHz, ±48,
+±36, ±24 and ±12.37 semitones, and .25/1/4 tempo. Frequencies stay within the
+output passband. All contract gates passed on the Apple M5 development Mac;
+the maximum fitted tone error among gated cases was 0.071 cents (rounded up).
+
+The stopband tones would land at 1.5 times output Nyquist without filtering.
+At +24, +36 and +48 semitones their middle-section RMS attenuation exceeded
+114 dB in these cases. This is a specific far-stopband test, not an alias-floor
+guarantee for arbitrary audio or frequencies near the transition band.
+
+The retained bass diagnostic is deliberately harder to resolve: a 32 Hz input
+at 44.1 kHz, shifted up 48 semitones. Compact windows produced errors up to
+268 cents; Balanced up to 38 cents. Detailed brought the measured error below
+0.001 cents at all three tempos. These cases are reported separately without a
+pitch pass threshold. The initial matrix failed its general 2-cent threshold on
+three Balanced cases; those observations are retained and motivate the explicit
+window comparison. Small windows do not support accurate extreme transposition
+of every bass component. Formant transparency at ±48 is not established.
+
+C/C++ regressions enforce creation-time bounds, arbitrary fractional range
+endpoints, invalid-control rollback, finite linked stereo, exact duration and
+block partitions, empty/short sources, seek, transitions, source-error retry and
+no allocation after creation. Lab tests exercise ±48 and fractional pitches.
+The original constructors still reject values outside .5..2.
+
+All 29 generated mono hashes and 32 local music renders in the original pitch
+range matched the frozen 0.3.0 output exactly on this toolchain. Five alternating
+runs of the ten existing stereo benchmark cases changed median render time by
+-0.42% to +0.94%, within 1% for these runs. This is a regression comparison, not
+a measured optimization or a claim of exact timing equivalence.
+
+A separate single run of 12 wide-range stereo benchmark cases measured render
+wall time at 0.9% to 44.3% of output duration. At +48 semitones and original tempo,
+the ratio was 20.9% at 48 kHz and 44.2% at 96 kHz. Some 256-frame calls, including
+startup, exceeded their audio duration; the largest was 29.0 ms. Use a rendering
+worker and an output queue. This is not CPU utilization or device qualification.
+Creation-time filter tables are 0.394 MB per engine for the legacy range versus
+3.149 MB for a maximum ratio of 16; a processor has two engines plus other working
+buffers. Wider support has a real memory and throughput cost.
 
 ## 0.3.0 diagnostic matrix
 

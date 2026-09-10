@@ -1,5 +1,16 @@
 # Change log
 
+## 0.4.0 - Unreleased
+
+- Add creation-time pitch ranges up to 1/16..16 (±48 semitones) in C and C++.
+- Preserve original creation limits, ABI layouts and legacy filter coefficients.
+- Scale the anti-alias filter from 96 to 768 taps for high upward shifts,
+  with capacity reserved at creation and allocation-free control/render calls.
+- Expand Lab and the WAV renderer to the full range, including fractional pitches.
+- Add range admission/rollback, wide seek/fade/retry and allocation tests,
+  plus multi-rate tone and stopband diagnostics.
+
+
 ## 0.3.0 - 2026-09-10
 
 - Add independent formant scaling, 1 to 4 ms envelope resolution, and Mixed

@@ -80,7 +80,7 @@ def tone_metrics(samples, rate, expected):
 
 
 
-def measure(renderer, directory, quick):
+def measure(renderer, directory, quick, wide=False):
     directory.mkdir(parents=True, exist_ok=False)
     report = {'scope': 'synthetic numerical diagnostics; no listening or device qualification',
               'renderer_sha256': digest(renderer), 'platform': platform.platform(),
@@ -135,6 +135,36 @@ def measure(renderer, directory, quick):
                     row['opposite_phase_residual_peak'] = float(np.max(np.abs(data[:,0]+data[:,1])))
                     if row['opposite_phase_residual_peak'] > 1e-6:
                         report['failures'].append({'name': row['name'], 'reason': 'stereo phase relation'})
+        if wide:
+            # Under-resolved bass is retained as a diagnostic, not discarded
+            # from the report. Compare window resolution explicitly.
+            for profile in ['compact','balanced','detailed']:
+                time_low=np.arange(44100*2)/44100
+                for tempo in ([1] if quick else [.25,1,4]):
+                    data,row=render(f'wide-low-bass-{profile}-{tempo}',.2*np.sin(2*np.pi*32*time_low),44100,tempo,16,'tonal',profile=profile)
+                    row.update(tone_metrics(data[:,0],44100,512))
+                    row['diagnostic_only']='32 Hz near the lowest analysis bins; inspect window-dependent pitch error'
+            for rate in ([48000] if quick else [8000,44100,48000,96000,192000]):
+                time_wide = np.arange(rate*2)/rate
+                for semitones in ([-48,48] if quick else [-48,-36,-24,-12.37,12.37,24,36,48]):
+                    pitch = 2**(semitones/12)
+                    # Keep at least 32 Hz output and stay below half Nyquist.
+                    hz = min(220, rate/(4*pitch))
+                    if pitch < 1: hz = 32/pitch
+                    source = .2*np.sin(2*np.pi*hz*time_wide)
+                    for tempo in ([1] if quick else [.25,1,4]):
+                        data,row=render(f'wide-{rate}-{semitones}-{tempo}',source,rate,tempo,pitch,'tonal')
+                        row.update(tone_metrics(data[:,0],rate,hz*pitch))
+                        if abs(row['cents_error'])>2:
+                            report['failures'].append({'name':row['name'],'reason':'wide tone error exceeds 2 cents'})
+                for pitch in ([16] if quick else [4,8,16]):
+                    hz=rate*.75/pitch
+                    source=.2*np.sin(2*np.pi*hz*time_wide)
+                    data,row=render(f'wide-stopband-{rate}-{pitch}',source,rate,1,pitch,'tonal')
+                    middle=data[len(data)//4:len(data)*3//4,0]
+                    row['stopband_rms_db']=20*math.log10(max(float(np.sqrt(np.mean(middle**2)))/(.2/math.sqrt(2)),1e-20))
+                    if row['stopband_rms_db']>-40:
+                        report['failures'].append({'name':row['name'],'reason':'wide stopband attenuation below 40 dB'})
         # A known source-filter model, with independently moved formants.
         harmonics = np.arange(1, 49)
         def envelope(f):
@@ -161,5 +191,6 @@ if __name__ == '__main__':
     parser.add_argument('renderer', type=Path)
     parser.add_argument('directory', type=Path)
     parser.add_argument('--quick', action='store_true')
+    parser.add_argument('--wide', action='store_true', help='Also measure the opt-in -48..+48 semitone range')
     args = parser.parse_args()
-    sys.exit(measure(args.renderer.resolve(), args.directory.resolve(), args.quick))
+    sys.exit(measure(args.renderer.resolve(), args.directory.resolve(), args.quick, args.wide))

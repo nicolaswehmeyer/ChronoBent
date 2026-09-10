@@ -17,23 +17,23 @@ static_assert(std::atomic<std::uint64_t>::is_always_lock_free &&
 // A single word publishes a coherent command. Controls use 0.01 semitone,
 // 0.000001 tempo ratio and 0.01 ms envelope resolution. No torn parameter sets.
 std::uint64_t pack(Settings s) {
-    const auto pitch = std::uint64_t(std::llround((std::clamp(s.semitones,-12.0,12.0)+12)*100));
+    const auto pitch = std::uint64_t(std::llround((std::clamp(s.semitones,-48.0,48.0)+48)*100));
     const auto tempo = std::uint64_t(std::llround(std::clamp(s.tempo,0.5,2.0)*1000000));
     const auto formant = std::uint64_t(std::llround((std::clamp(s.formant_semitones,-12.0,12.0)+12)*100));
     const auto envelope = std::uint64_t(std::llround(std::clamp(s.envelope_ms,1.0,4.0)*100));
-    return pitch | (tempo << 12) | (std::uint64_t(s.master_tempo) << 33) |
-        (std::uint64_t(s.bypass) << 34) | (std::uint64_t(s.formants) << 35) |
-        (formant << 36) | (std::uint64_t(std::min(s.transients,2u)) << 48) | (envelope << 50);
+    return pitch | (tempo << 14) | (std::uint64_t(s.master_tempo) << 35) |
+        (std::uint64_t(s.bypass) << 36) | (std::uint64_t(s.formants) << 37) |
+        (formant << 38) | (std::uint64_t(std::min(s.transients,2u)) << 50) | (envelope << 52);
 }
 chronobent_controls unpack(std::uint64_t word) {
-    if ((word >> 34) & 1) return chronobent_default_controls();
-    const double tempo = double((word >> 12) & ((1u<<21)-1))/1000000;
-    const bool master = (word >> 33) & 1;
-    const double semitones = double(word & ((1u<<12)-1))/100-12;
-    const double formant = double((word >> 36) & ((1u<<12)-1))/100-12;
+    if ((word >> 36) & 1) return chronobent_default_controls();
+    const double tempo = double((word >> 14) & ((1u<<21)-1))/1000000;
+    const bool master = (word >> 35) & 1;
+    const double semitones = double(word & ((1u<<14)-1))/100-48;
+    const double formant = double((word >> 38) & ((1u<<12)-1))/100-12;
     return {tempo, master ? std::exp2(semitones/12) : tempo,
-        ((word >> 35) & 1) ? std::exp2(formant/12) : 0,
-        double((word >> 50) & 511u)/100, std::uint32_t((word >> 48) & 3u), 0};
+        ((word >> 37) & 1) ? std::exp2(formant/12) : 0,
+        double((word >> 52) & 511u)/100, std::uint32_t((word >> 50) & 3u), 0};
 }
 
 }
@@ -108,7 +108,7 @@ void Player::run() noexcept {
         chronobent_config config{};
         if (chronobent_config_for_profile(sample_rate_,2,profile_,&config) != CHRONOBENT_OK)
             throw std::runtime_error("Invalid analysis profile");
-        chronobent_cpp::Processor processor(config,1024);
+        chronobent_cpp::Processor processor(config,1024,{.0625,16});
         auto source_read = [](void *context, std::uint64_t first, std::size_t count, float *out) -> int {
             const auto &source = *static_cast<const Player *>(context)->audio_;
             if (first > source.size()/2 || count > source.size()/2-first) return 0;

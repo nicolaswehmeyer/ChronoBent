@@ -172,6 +172,49 @@ void advanced() {
     require(processor.controls(actual)==CHRONOBENT_OK && actual.formant_scale==0 && actual.envelope_ms==2 && actual.transients==1,"legacy defaults restored");
     forbid_allocation=false;
 }
+void extended_range() {
+    Source source(12000);
+    chronobent_cpp::Processor processor(config(),31,{.0625,16});
+    chronobent_pitch_range range{};
+    require(processor.pitch_range(range)==CHRONOBENT_OK && range.maximum==16 && range.minimum==.0625,"processor range");
+    auto controls=chronobent_default_controls();
+    require(processor.set_source_controls(Source::read,&source,12000,controls)==CHRONOBENT_OK,"wide source");
+    std::array<float,1024> out{}; std::size_t got=0;
+    forbid_allocation=true;
+    for(double pitch : {16.,.0625,8.,.25}) {
+        require(processor.seek(1000)==CHRONOBENT_OK,"wide initial seek");
+        controls.pitch=pitch; controls.tempo=pitch>1 ? .25 : 4;
+        source.unavailable=true;
+        require(processor.set_controls(controls)==CHRONOBENT_SOURCE_UNAVAILABLE,"wide preroll unavailable");
+        source.unavailable=false;
+        require(processor.set_controls(controls)==CHRONOBENT_OK,"wide controls retry");
+        source.fail_at=source.calls+1;
+        auto status=processor.render(out.data(),512,got);
+        require(status==CHRONOBENT_OK || status==CHRONOBENT_SOURCE_UNAVAILABLE,"wide fade source failure");
+        source.fail_at=0;
+        require(processor.render(out.data(),512,got)==CHRONOBENT_OK,"wide fade retry");
+        require(processor.seek(6000)==CHRONOBENT_OK,"wide seek");
+        require(processor.render(out.data(),512,got)==CHRONOBENT_OK,"wide seek render");
+        for(std::size_t i=0;i<got*2;++i) require(std::isfinite(out[i]),"wide processor finite");
+        require(processor.seek(0)==CHRONOBENT_OK,"wide restart");
+    }
+    const auto previous=state(processor);
+    controls.pitch=16.001;
+    require(processor.set_controls(controls)==CHRONOBENT_INVALID_ARGUMENT,"wide bound rejection");
+    require(state(processor).source_position==previous.source_position && state(processor).parameters.pitch==previous.parameters.pitch,"wide bound rollback");
+    forbid_allocation=false;
+    chronobent_cpp::Processor limited(config(),0,{.8,4.123});
+    controls.pitch=4.123;
+    require(limited.set_source_controls(Source::read,&source,12000,controls)==CHRONOBENT_OK,"fractional range maximum");
+    forbid_allocation=true;
+    require(limited.render(out.data(),512,got)==CHRONOBENT_OK,"fractional filter capacity");
+    controls.pitch=.7999;
+    require(limited.set_controls(controls)==CHRONOBENT_INVALID_ARGUMENT,"custom minimum enforced");
+    controls.pitch=4.1231;
+    require(limited.set_source_controls(Source::read,&source,12000,controls)==CHRONOBENT_INVALID_ARGUMENT,"custom maximum enforced");
+    require(state(limited).parameters.pitch==4.123 && state(limited).delivered_frames==512,"custom source rejection rollback");
+    forbid_allocation=false;
+}
 void failures() {
     Source source(10000);
     chronobent_cpp::Processor processor(config(),64);
@@ -204,7 +247,7 @@ void operator delete[](void *p) noexcept { std::free(p); }
 void operator delete(void *p, std::size_t) noexcept { std::free(p); }
 void operator delete[](void *p, std::size_t) noexcept { std::free(p); }
 int main() {
-    basic(); failures(); advanced();
+    basic(); failures(); advanced(); extended_range();
     const auto reference=scenario(1,false);
     for (const auto block : {std::size_t(7),std::size_t(257),std::size_t(2048)}) {
         require(scenario(block,false)==reference,"block invariant");

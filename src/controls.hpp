@@ -5,13 +5,19 @@
 #include "chronobent/chronobent.h"
 
 namespace chronobent_dsp {
+inline bool valid(const chronobent_pitch_range *r) noexcept {
+    return r && r->minimum >= .0625 && r->minimum <= 1 && r->maximum >= 1 && r->maximum <= 16;
+}
+inline bool admits(const chronobent_pitch_range &r, double pitch) noexcept {
+    return pitch >= r.minimum && pitch <= r.maximum;
+}
 inline bool valid(const chronobent_controls *p) noexcept {
-    return p && p->tempo >= .25 && p->tempo <= 4 && p->pitch >= .5 && p->pitch <= 2 &&
+    return p && p->tempo >= .25 && p->tempo <= 4 && p->pitch >= .0625 && p->pitch <= 16 &&
         (p->formant_scale == 0 || (p->formant_scale >= .5 && p->formant_scale <= 2)) &&
         p->envelope_ms >= 1 && p->envelope_ms <= 4 && p->transients <= 2 && !p->reserved;
 }
 inline bool valid(const chronobent_parameters *p) noexcept {
-    return p && p->tempo >= .25 && p->tempo <= 4 && p->pitch >= .5 && p->pitch <= 2 &&
+    return p && p->tempo >= .25 && p->tempo <= 4 && p->pitch >= .0625 && p->pitch <= 16 &&
         p->transients <= 1 && p->formants <= 1;
 }
 inline chronobent_controls extend(const chronobent_parameters &p) noexcept {

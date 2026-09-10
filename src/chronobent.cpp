@@ -31,19 +31,22 @@ struct chronobent {
     std::size_t channels, window, ring_frames;
     chronobent_dsp::Vocoder vocoder;
     chronobent_dsp::Sinc sinc;
-    std::vector<float> input, block, ring;
+    std::vector<float> input, block, ring, coefficients;
+    const chronobent_pitch_range pitch_range;
     std::uint64_t source_length = 0, output_length = 0, position = 0;
     std::int64_t generated = 0;
     double tempo = 1, pitch = 1, rate = 1;
     bool ready = false;
     double formant_scale;
 
-    explicit chronobent(const chronobent_config &config)
+    explicit chronobent(const chronobent_config &config, chronobent_pitch_range range)
         : channels(config.channels),
           window(config.window_frames ? config.window_frames : window_size(config.sample_rate)),
           ring_frames(window * 4),
           vocoder(window, channels, config.sample_rate, config.transients != 0, config.formants != 0),
-          input(window * channels), block(window * channels / 4), ring(ring_frames * channels), formant_scale(config.formants ? 1 : 0) {}
+          sinc(range.maximum),
+          input(window * channels), block(window * channels / 4), ring(ring_frames * channels),
+          coefficients(chronobent_dsp::Sinc::capacity(range.maximum)), pitch_range(range), formant_scale(config.formants ? 1 : 0) {}
 
     chronobent_status read(chronobent_read_fn reader, void *user,
                          std::int64_t first, std::size_t count) noexcept {
@@ -89,13 +92,18 @@ struct chronobent {
 };
 
 extern "C" chronobent_status chronobent_create(const chronobent_config *config, chronobent **instance) {
+    const chronobent_pitch_range range{.5,2};
+    return chronobent_create_with_pitch_range(config, &range, instance);
+}
+extern "C" chronobent_status chronobent_create_with_pitch_range(const chronobent_config *config,
+    const chronobent_pitch_range *range, chronobent **instance) {
     if (!instance) return CHRONOBENT_INVALID_ARGUMENT;
     *instance = nullptr;
-    if (!config || !(config->sample_rate >= 8000 && config->sample_rate <= 192000) ||
+    if (!chronobent_dsp::valid(range) || !config || !(config->sample_rate >= 8000 && config->sample_rate <= 192000) ||
         !config->channels || config->channels > 8 || config->transients > 1 || config->formants > 1 ||
         (config->window_frames && (config->window_frames < 512 || config->window_frames > 8192 ||
           (config->window_frames & (config->window_frames - 1))))) return CHRONOBENT_INVALID_ARGUMENT;
-    try { *instance = new chronobent(*config); }
+    try { *instance = new chronobent(*config, *range); }
     catch (...) { return CHRONOBENT_OUT_OF_MEMORY; }
     return CHRONOBENT_OK;
 }
@@ -105,7 +113,7 @@ extern "C" void chronobent_destroy(chronobent *instance) { delete instance; }
 extern "C" chronobent_status chronobent_reset(chronobent *instance, std::uint64_t input_frames,
                                           double tempo, double pitch) {
     if (!instance || input_frames > maximum_frames || !(tempo >= 0.25 && tempo <= 4) ||
-        !(pitch >= 0.5 && pitch <= 2)) return CHRONOBENT_INVALID_ARGUMENT;
+        !chronobent_dsp::admits(instance->pitch_range, pitch)) return CHRONOBENT_INVALID_ARGUMENT;
     instance->source_length = input_frames;
     instance->output_length = static_cast<std::uint64_t>(std::ceil(static_cast<double>(input_frames) / tempo));
     instance->position = 0;
@@ -141,21 +149,21 @@ extern "C" chronobent_status chronobent_render(chronobent *instance, chronobent_
             *produced += count;
         }
     } else {
-        std::array<float, chronobent_dsp::Sinc::taps> coefficients{};
+        float *coefficients = instance->coefficients.data();
         for (; *produced < frames; ++*produced, ++instance->position) {
             // Absolute indexing avoids incremental ratio drift between blocks.
             const double source = static_cast<double>(instance->position) * instance->pitch;
             const auto center = static_cast<std::int64_t>(std::floor(source));
             const bool resample = instance->pitch != 1;
-            const auto status = instance->ensure(center + (resample ? chronobent_dsp::Sinc::right : 0), reader, user);
+            const auto status = instance->ensure(center + (resample ? instance->sinc.right() : 0), reader, user);
             if (status != CHRONOBENT_OK) return status;
             if (resample) instance->sinc.coefficients(source - static_cast<double>(center), coefficients);
             // Share ring addressing across stereo channels without changing the
             // tap accumulation order. No fast math or platform-specific SIMD.
             if (resample && channels == 2) {
                 float left = 0, right = 0;
-                for (std::size_t tap = 0; tap < chronobent_dsp::Sinc::taps; ++tap) {
-                    const auto frame = center - chronobent_dsp::Sinc::left + static_cast<std::int64_t>(tap);
+                for (std::size_t tap = 0; tap < instance->sinc.taps(); ++tap) {
+                    const auto frame = center - instance->sinc.left() + static_cast<std::int64_t>(tap);
                     const auto slot = (static_cast<std::size_t>(frame) & (instance->ring_frames - 1)) * 2;
                     left += coefficients[tap] * (frame < 0 ? 0.0f : instance->ring[slot]);
                     right += coefficients[tap] * (frame < 0 ? 0.0f : instance->ring[slot + 1]);
@@ -166,8 +174,8 @@ extern "C" chronobent_status chronobent_render(chronobent *instance, chronobent_
             for (std::size_t c = 0; c < channels; ++c) {
                 float value = 0;
                 if (resample) {
-                    for (std::size_t tap = 0; tap < chronobent_dsp::Sinc::taps; ++tap)
-                        value += coefficients[tap] * instance->sample(center - chronobent_dsp::Sinc::left + static_cast<std::int64_t>(tap), c);
+                    for (std::size_t tap = 0; tap < instance->sinc.taps(); ++tap)
+                        value += coefficients[tap] * instance->sample(center - instance->sinc.left() + static_cast<std::int64_t>(tap), c);
                 } else value = instance->sample(center, c);
                 output[*produced * channels + c] = value;
             }
@@ -182,7 +190,7 @@ extern "C" std::uint64_t chronobent_output_frames(const chronobent *instance) {
 extern "C" std::uint32_t chronobent_window_frames(const chronobent *instance) {
     return instance ? static_cast<std::uint32_t>(instance->window) : 0;
 }
-extern "C" const char *chronobent_version(void) { return "0.3.0"; }
+extern "C" const char *chronobent_version(void) { return "0.4.0"; }
 
 extern "C" chronobent_config chronobent_default_config(double sample_rate, std::uint32_t channels) {
     return {sample_rate, channels, 0, 1, 0};
@@ -210,7 +218,7 @@ extern "C" chronobent_status chronobent_reset_parameters(chronobent *instance,
 extern "C" chronobent_controls chronobent_default_controls(void) { return {1, 1, 0, 2, 1, 0}; }
 extern "C" chronobent_status chronobent_reset_controls(chronobent *instance,
     std::uint64_t input_frames, const chronobent_controls *p) {
-    if (!instance || !chronobent_dsp::valid(p) || input_frames > maximum_frames)
+    if (!instance || !chronobent_dsp::valid(p) || !chronobent_dsp::admits(instance->pitch_range, p->pitch) || input_frames > maximum_frames)
         return CHRONOBENT_INVALID_ARGUMENT;
     instance->formant_scale = p->formant_scale;
     instance->vocoder.options(p->transients, p->formant_scale, p->envelope_ms);
@@ -225,5 +233,11 @@ extern "C" chronobent_status chronobent_config_for_profile(double rate, std::uin
     result.window_frames = window_size(rate * (profile == CHRONOBENT_PROFILE_COMPACT ? .5 :
                                                profile == CHRONOBENT_PROFILE_DETAILED ? 2 : 1));
     *config = result;
+    return CHRONOBENT_OK;
+}
+
+extern "C" chronobent_status chronobent_get_pitch_range(const chronobent *instance, chronobent_pitch_range *range) {
+    if (!instance || !range) return CHRONOBENT_INVALID_ARGUMENT;
+    *range = instance->pitch_range;
     return CHRONOBENT_OK;
 }

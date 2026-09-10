@@ -21,7 +21,7 @@ int main(void) {
     if (chronobent_render(instance, read_source, source, output, 4, &produced) != CHRONOBENT_END || produced != 3) return 3;
     for (i = 0; i < 3; ++i) if (output[i] != source[i]) return 4;
     if (output[3] != 17) return 5;
-    if (strcmp(chronobent_version(), "0.3.0") != 0) return 6;
+    if (strcmp(chronobent_version(), "0.4.0") != 0) return 6;
     {
         chronobent_controls controls = chronobent_default_controls();
         chronobent_processor *processor = NULL;
@@ -37,6 +37,19 @@ int main(void) {
     }
     chronobent_destroy(instance);
     chronobent_destroy(NULL);
+    {
+        const chronobent_pitch_range range = {.0625,16};
+        chronobent_pitch_range actual;
+        chronobent_processor *processor = NULL;
+        if (chronobent_create_with_pitch_range(&config,&range,&instance) != CHRONOBENT_OK) return 13;
+        if (chronobent_get_pitch_range(instance,&actual) != CHRONOBENT_OK || actual.maximum != 16) return 14;
+        if (chronobent_reset(instance,3,1,16) != CHRONOBENT_OK) return 15;
+        if (chronobent_render(instance,read_source,source,output,4,&produced) != CHRONOBENT_END || produced != 3) return 16;
+        chronobent_destroy(instance);
+        if (chronobent_processor_create_with_pitch_range(&config,0,&range,&processor) != CHRONOBENT_OK) return 17;
+        if (chronobent_processor_get_pitch_range(processor,&actual) != CHRONOBENT_OK || actual.minimum != .0625) return 18;
+        chronobent_processor_destroy(processor);
+    }
     puts("chronobent C API: passed");
     return 0;
 }

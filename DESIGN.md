@@ -14,13 +14,24 @@ accumulate ratio drift.
 | `fft` | Iterative radix-2 complex FFT, precomputed twiddles, normalized inverse |
 | `vocoder` | Centered analysis, shared phase rotation, peak regions, sparse attacks, normalized overlap-add |
 | `envelope` | Tapered cepstral smoothing and bounded spectral-envelope correction |
-| `sinc` | 96-tap, 1024-phase interpolated Blackman-windowed low-pass resampling |
+| `sinc` | 96 to 768-tap, 1024-phase interpolated Blackman-windowed low-pass resampling |
 | `chronobent` | C ABI, validation, reset epochs, clipped source reads, ring storage and exact output length |
 | `controls` | Shared validation and legacy/extended parameter translation |
 | `processor` | Bound source, preallocated epoch pair, control preroll, retryable crossfades, seek, planar output and position |
 
 Each instance owns its tables and working buffers. The standard C++ library is
 required. File and audio-device APIs belong to the examples.
+
+## Resampling capacity
+
+The creation-time pitch range sets filter storage capacity. Active filters keep
+96 taps up to pitch 2 and use an even-rounded `48*pitch` above it, preserving
+transition-band width relative to the reduced input bandwidth. Preparation and
+rendering reuse allocated storage. For a given legacy ratio, coefficient and
+sample accumulation order remain unchanged. The synthesis ring remains four
+windows: even the smallest ring holds 768 taps plus a complete synthesis hop.
+The maximum pitch 16 and minimum tempo .25 retain a positive integer analysis
+advance at the minimum window, avoiding repeated zero-distance phase estimates.
 
 ## Phase and channel handling
 

@@ -151,6 +151,12 @@ int main() {
         std::printf("app tempo=%.6f master=%d cents=%+.5f frames=%zu\n",tempo,master,cents,output.size());
         require(std::abs(cents)<0.1,"Master Tempo/linked-speed pitch is inaccurate");
     }
+    for(double semitones : {-48.,-24.37,24.37,48.}) {
+        audition::Player wide(source,48000,audition::Settings{semitones,1,true,false,false});
+        const auto output=drain(wide);
+        const double cents=1200*std::log2(frequency(output)/(220*std::exp2(semitones/12)));
+        require(output.size()==48000 && std::abs(cents)<1,"wide player pitch and duration");
+    }
     audition::Player automated(source,48000);
     const auto moved=drain(automated,true);
     float jump=0;

@@ -12,10 +12,11 @@ namespace chronobent_cpp {
 // C status unchanged, so source retry needs no exception machinery in the host.
 class Processor {
 public:
-    explicit Processor(chronobent_config config, uint32_t transition_frames = 1024)
+    explicit Processor(chronobent_config config, uint32_t transition_frames = 1024,
+                       chronobent_pitch_range range = {.5,2})
         : handle_(nullptr, chronobent_processor_destroy) {
         chronobent_processor *raw = nullptr;
-        const auto status = chronobent_processor_create(&config, transition_frames, &raw);
+        const auto status = chronobent_processor_create_with_pitch_range(&config, transition_frames, &range, &raw);
         if (status != CHRONOBENT_OK) throw std::runtime_error(chronobent_status_string(status));
         handle_.reset(raw);
     }
@@ -39,6 +40,9 @@ public:
     }
     chronobent_status controls(chronobent_controls &out) const noexcept {
         return chronobent_processor_get_controls(get(), &out);
+    }
+    chronobent_status pitch_range(chronobent_pitch_range &out) const noexcept {
+        return chronobent_processor_get_pitch_range(get(), &out);
     }
     chronobent_status seek(uint64_t frame) noexcept { return chronobent_processor_seek(get(), frame); }
     chronobent_status render(float *out, size_t frames, size_t &produced) noexcept {

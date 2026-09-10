@@ -47,6 +47,7 @@ struct Epoch {
 
 struct chronobent_processor {
     std::array<Epoch, 2> epochs;
+    chronobent_pitch_range pitch_range{.5,2};
     std::array<float, block_frames * 8> scratch{};
     chronobent_read_fn reader = nullptr;
     void *user = nullptr;
@@ -91,18 +92,23 @@ struct chronobent_processor {
 
 extern "C" chronobent_status chronobent_processor_create(const chronobent_config *config,
     std::uint32_t transition_frames, chronobent_processor **instance) {
+    const chronobent_pitch_range range{.5,2};
+    return chronobent_processor_create_with_pitch_range(config, transition_frames, &range, instance);
+}
+extern "C" chronobent_status chronobent_processor_create_with_pitch_range(const chronobent_config *config,
+    std::uint32_t transition_frames, const chronobent_pitch_range *range, chronobent_processor **instance) {
     if (!instance) return CHRONOBENT_INVALID_ARGUMENT;
     *instance = nullptr;
-    if (transition_frames > 65536) return CHRONOBENT_INVALID_ARGUMENT;
+    if (!valid(range) || transition_frames > 65536) return CHRONOBENT_INVALID_ARGUMENT;
     try {
         auto p = std::make_unique<chronobent_processor>();
         for (auto &epoch : p->epochs) {
             chronobent *raw = nullptr;
-            const auto status = chronobent_create(config, &raw);
+            const auto status = chronobent_create_with_pitch_range(config, range, &raw);
             if (status != CHRONOBENT_OK) return status;
             epoch.dsp.reset(raw); epoch.channels = config->channels;
         }
-        p->channels = config->channels; p->fade_length = transition_frames;
+        p->pitch_range = *range; p->channels = config->channels; p->fade_length = transition_frames;
         *instance = p.release();
     } catch (...) { return CHRONOBENT_OUT_OF_MEMORY; }
     return CHRONOBENT_OK;
@@ -111,7 +117,7 @@ extern "C" void chronobent_processor_destroy(chronobent_processor *instance) { d
 
 extern "C" chronobent_status chronobent_processor_set_source_controls(chronobent_processor *p,
     chronobent_read_fn reader, void *user, std::uint64_t frames, const chronobent_controls *parameters) {
-    if (!p || !valid(parameters) || frames > (UINT64_C(1) << 48) || (frames && !reader))
+    if (!p || !valid(parameters) || !chronobent_dsp::admits(p->pitch_range, parameters->pitch) || frames > (UINT64_C(1) << 48) || (frames && !reader))
         return CHRONOBENT_INVALID_ARGUMENT;
     auto &epoch = p->epochs[0];
     const auto status = chronobent_reset_controls(epoch.dsp.get(), frames, parameters);
@@ -126,7 +132,7 @@ extern "C" chronobent_status chronobent_processor_set_source_controls(chronobent
 }
 extern "C" chronobent_status chronobent_processor_set_controls(chronobent_processor *p,
     const chronobent_controls *parameters) {
-    if (!p || !valid(parameters)) return CHRONOBENT_INVALID_ARGUMENT;
+    if (!p || !valid(parameters) || !chronobent_dsp::admits(p->pitch_range, parameters->pitch)) return CHRONOBENT_INVALID_ARGUMENT;
     if (!p->ready) return CHRONOBENT_NOT_RESET;
     if (equal(*parameters, p->parameters)) return CHRONOBENT_OK;
     if (p->fading) return CHRONOBENT_BUSY;
@@ -222,5 +228,12 @@ extern "C" chronobent_status chronobent_processor_get_controls(const chronobent_
     if (!p || !controls) return CHRONOBENT_INVALID_ARGUMENT;
     if (!p->ready) return CHRONOBENT_NOT_RESET;
     *controls = p->parameters;
+    return CHRONOBENT_OK;
+}
+
+extern "C" chronobent_status chronobent_processor_get_pitch_range(
+    const chronobent_processor *instance, chronobent_pitch_range *range) {
+    if (!instance || !range) return CHRONOBENT_INVALID_ARGUMENT;
+    *range = instance->pitch_range;
     return CHRONOBENT_OK;
 }

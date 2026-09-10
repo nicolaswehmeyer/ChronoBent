@@ -307,6 +307,68 @@ void failure_and_reset() {
         sine(s, 48000, 440);
     }
 }
+void extended_range() {
+    auto config = chronobent_default_config(48000,2);
+    config.window_frames=512; config.transients=0;
+    const chronobent_pitch_range range{.0625,16};
+    chronobent *raw=nullptr;
+    require(chronobent_create_with_pitch_range(&config,&range,&raw)==CHRONOBENT_OK,"wide create");
+    Engine p(raw,chronobent_destroy);
+    chronobent_pitch_range actual{};
+    require(chronobent_get_pitch_range(p.get(),&actual)==CHRONOBENT_OK && actual.minimum==.0625 && actual.maximum==16,"wide query");
+    for (auto bad : {chronobent_pitch_range{0,16}, {1.1,16}, {.0625,.9}, {.0624,16}, {.0625,16.01},
+                     {std::numeric_limits<double>::quiet_NaN(),2}, {.5,std::numeric_limits<double>::infinity()}}) {
+        raw=p.get();
+        require(chronobent_create_with_pitch_range(&config,&bad,&raw)==CHRONOBENT_INVALID_ARGUMENT && !raw,"invalid range");
+    }
+    Source source(24000,2);
+    std::vector<float> a(192000), b(192000);
+    for (double pitch : {.0625,.125,.25,.499,1.,2.,4.,8.,16.}) {
+        sine(source,48000,512/std::max(1.,pitch),true);
+        for (double tempo : {.25,1.,4.}) {
+            forbid_allocation=true;
+            std::size_t length=0;
+            for (unsigned partition=0;partition<2;++partition) {
+                require(chronobent_reset(p.get(),24000,tempo,pitch)==CHRONOBENT_OK,"wide reset");
+                std::size_t written=0;
+                while (true) {
+                    std::size_t got=0;
+                    float *out=partition ? b.data() : a.data();
+                    auto status=chronobent_render(p.get(),Source::read,&source,out+2*written,partition ? 257 : 4096,&got);
+                    written+=got;
+                    require(status==CHRONOBENT_OK || status==CHRONOBENT_END,"wide render");
+                    if(status==CHRONOBENT_END) break;
+                    require(got>0,"wide progress");
+                }
+                require(written==std::size_t(std::ceil(24000/tempo)),"wide duration");
+                length=written*2;
+            }
+            require(!std::memcmp(a.data(),b.data(),length*sizeof(float)),"wide block invariant");
+            for(std::size_t i=0;i<length;i+=2)
+                require(std::isfinite(a[i]) && a[i]==-a[i+1],"wide finite linked stereo");
+            forbid_allocation=false;
+        }
+    }
+    // At +48, a 3 kHz input is above the new 1.5 kHz input Nyquist.
+    // Require attenuation, not a bogus estimate of the aliased output pitch.
+    sine(source,48000,3000,true);
+    require(chronobent_reset(p.get(),24000,1,16)==CHRONOBENT_OK,"wide alias reset");
+    std::size_t got=0;
+    require(chronobent_render(p.get(),Source::read,&source,a.data(),24000,&got)==CHRONOBENT_END && got==24000,"wide alias render");
+    double energy=0;
+    for(std::size_t i=6000;i<18000;++i) energy+=double(a[2*i])*a[2*i];
+    require(std::sqrt(energy/12000)<.002,"wide stopband attenuation");
+    for (uint64_t frames : {uint64_t(0),uint64_t(1),uint64_t(7)}) {
+        require(chronobent_reset(p.get(),frames,.25,16)==CHRONOBENT_OK,"wide short reset");
+        require(chronobent_render(p.get(),Source::read,&source,a.data(),64,&got)==CHRONOBENT_END && got==frames*4,"wide short duration");
+    }
+    // Out-of-range advanced controls must not mutate the old epoch's options.
+    auto legacy=engine(); auto control=chronobent_default_controls(); control.pitch=4; control.formant_scale=.7;
+    require(chronobent_reset(legacy.get(),24000,1,1)==CHRONOBENT_OK,"legacy reset");
+    require(chronobent_reset_controls(legacy.get(),24000,&control)==CHRONOBENT_INVALID_ARGUMENT,"legacy rejects wider range");
+    require(chronobent_render(legacy.get(),Source::read,&source,a.data(),24000,&got)==CHRONOBENT_END &&
+        !std::memcmp(a.data(),source.audio.data(),24000*2*sizeof(float)),"range rejection rollback");
+}
 void invalid_and_allocation() {
     chronobent *raw = nullptr;
     chronobent_config config{48000, 2, 0, 1, 0};
@@ -356,5 +418,6 @@ int main() {
     envelope_quality();
     failure_and_reset();
     invalid_and_allocation();
+    extended_range();
     std::puts("chronobent: DFT oracle, identity, duration, block invariance, pitch, stereo, aliasing, failure/retry, reset and allocation checks passed");
 }

@@ -20,7 +20,7 @@ your application owns storage, threads and audio devices.
 | Control | Capability |
 | --- | --- |
 | Tempo | 0.25 to 4 times speed, independent of pitch |
-| Pitch | One octave down to one octave up |
+| Pitch | Up to four octaves down or up, selected at creation |
 | Formants | Preserve the original envelope or shift it independently by up to an octave |
 | Transients | Smooth, Crisp and Mixed handling |
 | Analysis | Compact, Balanced and Detailed window profiles |
@@ -28,22 +28,19 @@ your application owns storage, threads and audio devices.
 | Playback | Seek, parameter crossfades, planar or interleaved output |
 | Integration | C ABI, move-only C++ wrapper, CMake package, static or shared library |
 
-**0.3.0 is experimental.** Its processing contracts have automated tests, but
+**0.4.0 is experimental.** Its processing contracts have automated tests, but
 musical transparency is not established across all material and settings.
 The source must support random-access reads. This is not a live-input effect.
 
-## New in 0.3.0
+## New in 0.4.0
 
-- Independent formant scaling, adjustable envelope resolution and Mixed transients.
-- Named analysis profiles and additive C/C++ controls. Earlier C layouts and entry points remain compatible.
-- An optimized FFT. Five alternating runs on an Apple M5 showed 8.18 to 11.54% lower
-  median render time than 0.2.0 across ten stereo benchmark cases.
-- A 162-render diagnostic matrix, alongside existing DSP, lifecycle and allocation tests.
-- A redesigned Lab with waveform overview, track seeking, keyboard transport,
-  independent timbre controls, analysis selection and adjustable output gain.
+- Select a pitch range at creation, up to -48 through +48 semitones, including fractional values.
+- Use the full range in Lab and the WAV renderer, with independent tempo and formants.
+- Longer anti-alias filters for shifts above +12 semitones, allocated before processing.
+- Existing creation functions retain their original range and filter capacity.
+- Extended numerical, allocation, seek and source-retry regressions.
 
 See [the changelog](CHANGELOG-DSP.md) and [measurement scope](QUALITY.md).
-The performance result describes those inputs and that machine.
 
 ## Build
 
@@ -87,7 +84,7 @@ auto status = chronobent_config_for_profile(
     48000, 2, CHRONOBENT_PROFILE_BALANCED, &config);
 if (status != CHRONOBENT_OK) return;
 
-chronobent_cpp::Processor processor(config, 1024);
+chronobent_cpp::Processor processor(config, 1024, {.0625, 16});
 auto controls = chronobent_default_controls();
 controls.tempo = 1.25;       // 25% faster.
 controls.pitch = 1.0;        // Original key: Master Tempo.
@@ -116,7 +113,9 @@ The same processor is available without a C++ wrapper:
 chronobent_config config = chronobent_default_config(48000, 2);
 chronobent_controls controls = chronobent_default_controls();
 chronobent_processor *processor = NULL;
-chronobent_status status = chronobent_processor_create(&config, 1024, &processor);
+chronobent_pitch_range range = {.0625, 16};
+chronobent_status status = chronobent_processor_create_with_pitch_range(
+    &config, 1024, &range, &processor);
 if (status == CHRONOBENT_OK) {
     status = chronobent_processor_set_source_controls(
         processor, reader, user, input_frames, &controls);
@@ -133,6 +132,12 @@ Use the fixed-epoch API when your host already owns parameter transitions.
 
 `tempo` is input frames per output frame. `pitch` is output frequency divided by
 input frequency. Convert semitones with `exp2(semitones / 12.0)`.
+The new constructors accept a range within `[1/16, 16]` that includes unity.
+For example, `{.25, 4}` allows ±24 semitones; `{.0625, 16}` allows ±48.
+Existing constructors keep ±12 semitones. The range is fixed for the lifetime
+of the instance and applies to every pitch setter. Filter memory grows with the
+selected maximum. Extreme shifts can lose bandwidth and introduce artifacts;
+the accepted range is not a transparency guarantee.
 
 | Intent | Tempo | Pitch | Formant scale |
 | --- | --- | --- | --- |
@@ -191,17 +196,16 @@ It loads the source into memory. On Windows, use `build/Release/chronobent-rende
 
 ## ChronoBent Lab
 
-The redesigned 0.3.0 app is available from source. Its packaged download is
-pending Apple notarization and package verification.
+The 0.4.0 app is available from source; a packaged download is not available.
 [Download the previously verified Lab 0.2.0 for macOS](https://github.com/nicolaswehmeyer/ChronoBent/releases/download/v0.2.0/ChronoBent-Lab-0.2.0-macOS-universal.dmg),
-or build 0.3.0 using the command below. The app targets macOS 11 or later on
-Apple Silicon and Intel. The controls described here belong to 0.3.0.
+or build 0.4.0 using the command below. The app targets macOS 11 or later on
+Apple Silicon and Intel. The controls described here belong to 0.4.0.
 
 Open a track, then press **Space** to play or pause. Drag the position slider to
 seek, or use the **arrow keys** to skip five seconds. Restart returns to the
 beginning. Speed ranges from 50% to 200%. Master Tempo starts enabled.
 
-Pitch, speed and timbre have separate controls. Enable independent formants and
+Pitch ranges from -48 to +48 semitones. Pitch, speed and timbre have separate controls. Enable independent formants and
 leave timbre at zero to preserve the original envelope. Choose a transient mode
 and analysis profile for your material. Bypass restores original pitch and speed.
 The output gain applies equally to processed and bypass audio; it starts at

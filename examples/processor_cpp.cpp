@@ -16,9 +16,9 @@ int main() {
         };
         chronobent_config config{};
         if (chronobent_config_for_profile(48000,2,CHRONOBENT_PROFILE_BALANCED,&config) != CHRONOBENT_OK) return 1;
-        chronobent_cpp::Processor processor(config);
+        chronobent_cpp::Processor processor(config,1024,{.0625,16});
         auto parameters = chronobent_default_controls();
-        parameters.pitch = 2; // One octave up, unchanged duration.
+        parameters.pitch = 4; // Two octaves up, unchanged duration.
         parameters.formant_scale = 1; // Preserve the original spectral envelope.
         parameters.transients = CHRONOBENT_TRANSIENT_MIXED;
         auto status = processor.set_source_controls(read, &source, source.size()/2, parameters);

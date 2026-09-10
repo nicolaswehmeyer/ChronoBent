@@ -57,7 +57,7 @@ with tempfile.TemporaryDirectory(prefix='chronobent-wav-') as directory:
         assert result.returncode != 0, 'malformed input accepted'
         assert not dest.exists(), 'rejected input created output'
     source.write_bytes(valid)
-    for tempo, pitch in [('nan', '1'), ('0', '1'), ('1', '2.1'), ('1junk', '1')]:
+    for tempo, pitch in [('nan', '1'), ('0', '1'), ('1', '16.1'), ('1junk', '1')]:
         assert subprocess.run([EXE, str(source), str(dest), tempo, pitch], capture_output=True).returncode != 0
         assert not dest.exists()
 print('WAV: exact PCM16/24/32/float, odd chunks, malformed input and exclusive output passed')

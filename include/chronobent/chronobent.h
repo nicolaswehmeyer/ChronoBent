@@ -24,6 +24,14 @@ extern "C" {
 
 typedef struct chronobent chronobent;
 
+/* Additive 0.4 API: creation-time admission and filter capacity. Ratios must include unity and
+ * lie in [1/16,16] (-48..+48 semitones). Smaller maxima need less memory.
+ * Existing create functions retain their original [.5,2] range. */
+typedef struct chronobent_pitch_range {
+    double minimum;
+    double maximum;
+} chronobent_pitch_range;
+
 typedef enum chronobent_status {
     CHRONOBENT_OK = 0,
     CHRONOBENT_END = 1,
@@ -59,11 +67,17 @@ typedef int (*chronobent_read_fn)(void *user, uint64_t first_frame,
  * A successful create still requires reset before render. */
 CHRONOBENT_API chronobent_status chronobent_create(const chronobent_config *config,
                                             chronobent **instance);
+CHRONOBENT_API chronobent_status chronobent_create_with_pitch_range(
+    const chronobent_config *config, const chronobent_pitch_range *range, chronobent **instance);
+/* No allocation. Invalid arguments leave range unchanged. */
+CHRONOBENT_API chronobent_status chronobent_get_pitch_range(
+    const chronobent *instance, chronobent_pitch_range *range);
 CHRONOBENT_API void chronobent_destroy(chronobent *instance);
 
 /* Starts a new epoch at source frame zero. tempo = input frames/output frame;
  * pitch = output frequency/input frequency. Both are finite: tempo .25..4,
- * pitch .5..2. Output length is ceil(input_frames/tempo), input_frames <= 2^48.
+ * pitch within the instance's creation-time range. Output length is
+ * ceil(input_frames/tempo), input_frames <= 2^48.
  * Ratios are constant for an epoch. Reset discards pending audio and phase
  * history; a host changing ratios during playback supplies its own crossfade.
  * Reset performs bounded table generation but allocates nothing. An invalid
@@ -91,7 +105,7 @@ CHRONOBENT_API const char *chronobent_version(void);
 /* Additive 0.2 API. The original config layout and status values are unchanged. */
 typedef struct chronobent_parameters {
     double tempo;          /* .25..4 input frames per output frame. */
-    double pitch;          /* .5..2 frequency ratio; exp2(semitones/12). */
+    double pitch;          /* Instance range; frequency ratio exp2(semitones/12). */
     uint32_t transients;   /* 0 or 1. */
     uint32_t formants;     /* 0 or 1. */
 } chronobent_parameters;
@@ -122,6 +136,11 @@ typedef struct chronobent_processor_state {
  * not a time-critical audio callback. No implicit threads or output queue. */
 CHRONOBENT_API chronobent_status chronobent_processor_create(const chronobent_config *config,
     uint32_t transition_frames, chronobent_processor **instance);
+CHRONOBENT_API chronobent_status chronobent_processor_create_with_pitch_range(
+    const chronobent_config *config, uint32_t transition_frames,
+    const chronobent_pitch_range *range, chronobent_processor **instance);
+CHRONOBENT_API chronobent_status chronobent_processor_get_pitch_range(
+    const chronobent_processor *instance, chronobent_pitch_range *range);
 CHRONOBENT_API void chronobent_processor_destroy(chronobent_processor *instance);
 /* Replaces the source and discards any transition. Reader/user must remain valid
  * until another successful set_source or destroy. Caller retains ownership.
@@ -168,7 +187,7 @@ typedef enum chronobent_transient_mode {
 
 typedef struct chronobent_controls {
     double tempo;           /* .25..4 input frames per output frame. */
-    double pitch;           /* .5..2 output/input frequency ratio. */
+    double pitch;           /* Instance range; output/input frequency ratio. */
     double formant_scale;   /* 0: follow pitch. Otherwise .5..2 relative to source;
                               1 preserves the envelope, independently of pitch. */
     double envelope_ms;     /* 1..4 ms cepstral lifter extent; default 2 ms.

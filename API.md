@@ -1,7 +1,7 @@
 # API reference
 
-ChronoBent 0.3.0 provides a C ABI and a header-only C++ ownership wrapper.
-The 0.1/0.2 C entry points, struct layouts and status numbers remain unchanged.
+ChronoBent 0.4.0 provides a C ABI and a header-only C++ ownership wrapper.
+The 0.1/0.2/0.3 C entry points, struct layouts and status numbers remain unchanged.
 Link against the library built for the host architecture. The C++ standard
 runtime is required even when the application calls the C API.
 
@@ -20,7 +20,7 @@ argument for DSP options; config options initialize the underlying engines.
 | `channels` | 1..8 phase-linked channels |
 | `window_frames` | 0 for automatic, or a power of two from 512 through 8192 |
 | `tempo` | Finite .25..4 input frames per output frame |
-| `pitch` | Finite .5..2 output/input frequency ratio |
+| `pitch` | Finite output/input frequency ratio within the creation-time range |
 | `transients` | 0 for tonal processing, 1 for attack anchoring and onset resets |
 | `formants` | 0 for shifted timbre, 1 for approximate spectral-envelope preservation |
 
@@ -28,6 +28,35 @@ All frame counts count multichannel frames, not individual samples or bytes.
 Input length is limited to 2^48 frames. Samples are finite floats with absolute
 value at most 64; nominal full scale is [-1,1]. Processing can exceed full scale.
 No limiter is applied. Buffers must have space for the requested frame count.
+
+## Creation-time pitch range
+
+`chronobent_create_with_pitch_range(config, &range, &engine)` and
+`chronobent_processor_create_with_pitch_range(config, fade_frames, &range, &processor)`
+copy a `chronobent_pitch_range {minimum, maximum}`. Both bounds must be finite,
+with `1/16 <= minimum <= 1 <= maximum <= 16`. Ratios need not be whole semitones.
+The original creation functions use `{.5, 2}`. Existing struct layouts are unchanged.
+
+All reset and parameter/control setters honor the instance's range. Rejection
+leaves the current epoch/source/options untouched. The range cannot change after
+creation. Null ranges are invalid, and failed creation clears the output handle.
+`chronobent_get_pitch_range` and `chronobent_processor_get_pitch_range` copy the
+bounds without reads, allocation or DSP work, including before reset/source bind.
+Invalid handles/output pointers return `INVALID_ARGUMENT`; output is unchanged.
+
+The filter uses 96 taps through pitch 2. Above that, it uses `2*ceil(24*pitch)`
+taps, up to 768. Its table reserves `(1024+1)*capacity*4` bytes per engine;
+a processor owns two engines. A maximum of 2 reserves 393,600 bytes per table;
+a maximum of 16 reserves 3,148,800 bytes per table. Other FFT, ring and scratch
+buffers are additional. Reset/control changes regenerate the active table
+without allocation. Select only the range needed by the host.
+
+Tempo remains .25..4 for every admitted pitch. This caps intermediate time
+scaling at 1/64..64. At the smallest 512-frame window, the slowest analysis
+advance is one input frame; wider limits would need a different phase-step
+contract. High upward shifts discard input frequencies above the new Nyquist
+limit. Low downward shifts can smear short events. Formant scale remains .5..2,
+and its bounded envelope correction does not promise transparency at extremes.
 
 ## Extended controls and profiles
 
@@ -37,7 +66,7 @@ This is the extended `chronobent_controls` layout:
 | Field | Contract |
 | --- | --- |
 | `tempo` | Finite .25..4 input frames per output frame |
-| `pitch` | Finite .5..2 output/input frequency ratio |
+| `pitch` | Finite output/input frequency ratio within the creation-time range |
 | `formant_scale` | Zero follows pitch; otherwise finite .5..2 relative to the original source envelope |
 | `envelope_ms` | Finite 1..4 ms cepstral extent; default 2; not processing latency |
 | `transients` | `SMOOTH` (0), `CRISP` (1), or `MIXED` (2), with the `CHRONOBENT_TRANSIENT_` prefix |
@@ -234,10 +263,11 @@ another reset. Existing hosts can continue owning their own crossfades.
 ## C++ wrapper
 
 Include [chronobent.hpp](include/chronobent/chronobent.hpp) and construct
-`chronobent_cpp::Processor(config, transition_frames)`. It owns the C handle,
+`chronobent_cpp::Processor(config, transition_frames, range)`. The optional
+range defaults to `{.5, 2}`. It owns the C handle,
 cannot be copied and can be moved. Construction throws `std::runtime_error`
 on failure. `set_source`, `set_parameters`, `seek`, `render`, `render_planar`
-`state`, `set_source_controls`, `set_controls` and `controls` return the C status and are `noexcept`. `get()` exposes the borrowed
+`state`, `set_source_controls`, `set_controls`, `controls` and `pitch_range` return the C status and are `noexcept`. `get()` exposes the borrowed
 C handle; do not destroy it independently. Calls on a moved-from object return
 `INVALID_ARGUMENT` through its null handle.
 

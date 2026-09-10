@@ -137,7 +137,8 @@ int main(int argc, char **argv) {
         if (chronobent_config_for_profile(double(input.rate),input.channels,profile,&config) != CHRONOBENT_OK)
             throw std::runtime_error("Invalid source configuration");
         chronobent *raw = nullptr;
-        if (chronobent_create(&config, &raw) != CHRONOBENT_OK) throw std::runtime_error("Cannot create renderer");
+        const chronobent_pitch_range range{.0625,16};
+        if (chronobent_create_with_pitch_range(&config, &range, &raw) != CHRONOBENT_OK) throw std::runtime_error("Cannot create renderer");
         std::unique_ptr<chronobent, decltype(&chronobent_destroy)> engine(raw, chronobent_destroy);
         if (chronobent_reset_controls(engine.get(), input.audio.size()/input.channels, &controls) != CHRONOBENT_OK)
             throw std::runtime_error("Controls out of range: tempo .25..4, pitch .5..2, formants .5..2, envelope 1..4 ms");
