@@ -7,7 +7,11 @@
 namespace chronobent_dsp {
 Envelope::Envelope(std::size_t size, double sample_rate)
     : size_(size), cutoff_(std::min(size / 4, static_cast<std::size_t>(sample_rate * 0.002))),
-      fft_(size), scratch_(size) {}
+      sample_rate_(sample_rate), fft_(size), scratch_(size) {}
+
+void Envelope::configure(double milliseconds) noexcept {
+    cutoff_ = std::min(size_ / 4, static_cast<std::size_t>(sample_rate_ * (milliseconds * .001)));
+}
 
 void Envelope::analyze(const double *magnitudes) noexcept {
     double maximum = 1e-12;

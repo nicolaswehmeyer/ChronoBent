@@ -156,6 +156,55 @@ CHRONOBENT_API chronobent_status chronobent_processor_render_planar(chronobent_p
 CHRONOBENT_API chronobent_status chronobent_processor_get_state(const chronobent_processor *instance,
     chronobent_processor_state *state);
 
+/* Additive 0.3 API. Earlier layouts and entry points remain binary compatible.
+ * Legacy parameter setters restore their defaults for advanced fields. Plain
+ * chronobent_reset changes timing and retains the current processing options.
+ * All controls are copied; no caller pointer is retained. */
+typedef enum chronobent_transient_mode {
+    CHRONOBENT_TRANSIENT_SMOOTH = 0,
+    CHRONOBENT_TRANSIENT_CRISP = 1,
+    CHRONOBENT_TRANSIENT_MIXED = 2
+} chronobent_transient_mode;
+
+typedef struct chronobent_controls {
+    double tempo;           /* .25..4 input frames per output frame. */
+    double pitch;           /* .5..2 output/input frequency ratio. */
+    double formant_scale;   /* 0: follow pitch. Otherwise .5..2 relative to source;
+                              1 preserves the envelope, independently of pitch. */
+    double envelope_ms;     /* 1..4 ms cepstral lifter extent; default 2 ms.
+                              Larger values retain finer envelope structure. */
+    uint32_t transients;    /* chronobent_transient_mode. MIXED protects sustained
+                              components below 500 Hz from onset phase resets. */
+    uint32_t reserved;      /* Must be zero. */
+} chronobent_controls;
+
+typedef enum chronobent_profile {
+    CHRONOBENT_PROFILE_COMPACT = 0,  /* window >= 20 ms, clamped 512..8192 */
+    CHRONOBENT_PROFILE_BALANCED = 1, /* window >= 40 ms, legacy default */
+    CHRONOBENT_PROFILE_DETAILED = 2  /* window >= 80 ms, clamped 512..8192 */
+} chronobent_profile;
+
+CHRONOBENT_API chronobent_controls chronobent_default_controls(void);
+/* Profiles choose a power-of-two analysis window, not a quality guarantee.
+ * Longer windows resolve lower partials but need more history. No allocation.
+ * Invalid arguments leave config unchanged. Choose before creating an engine. */
+CHRONOBENT_API chronobent_status chronobent_config_for_profile(double sample_rate,
+    uint32_t channels, chronobent_profile profile, chronobent_config *config);
+CHRONOBENT_API chronobent_status chronobent_reset_controls(chronobent *instance,
+    uint64_t input_frames, const chronobent_controls *controls);
+/* Same source, preroll, BUSY, rollback, allocation and thread contracts as the
+ * original processor setters. Formant-only changes also use the crossfade. */
+CHRONOBENT_API chronobent_status chronobent_processor_set_source_controls(
+    chronobent_processor *instance, chronobent_read_fn reader, void *user,
+    uint64_t input_frames, const chronobent_controls *controls);
+CHRONOBENT_API chronobent_status chronobent_processor_set_controls(
+    chronobent_processor *instance, const chronobent_controls *controls);
+CHRONOBENT_API chronobent_status chronobent_processor_get_controls(
+    const chronobent_processor *instance, chronobent_controls *controls);
+/* get_state reports a legacy projection: transients is enabled for CRISP/MIXED,
+ * formants is enabled for any explicit formant_scale. Use get_controls for the
+ * complete target settings. This query performs no source reads or DSP work. */
+
 #ifdef __cplusplus
 }
 #endif

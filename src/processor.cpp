@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Nicolas Wehmeyer
 #include "chronobent/chronobent.h"
+#include "controls.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -10,13 +11,8 @@
 
 namespace {
 constexpr std::size_t block_frames = 256;
-bool valid(const chronobent_parameters *p) noexcept {
-    return p && p->tempo >= .25 && p->tempo <= 4 && p->pitch >= .5 && p->pitch <= 2 &&
-        p->transients <= 1 && p->formants <= 1;
-}
-bool equal(const chronobent_parameters &a, const chronobent_parameters &b) noexcept {
-    return a.tempo == b.tempo && a.pitch == b.pitch && a.transients == b.transients && a.formants == b.formants;
-}
+using chronobent_dsp::valid;
+using chronobent_dsp::equal;
 struct Epoch {
     std::unique_ptr<chronobent, decltype(&chronobent_destroy)> dsp{nullptr, chronobent_destroy};
     chronobent_read_fn reader = nullptr;
@@ -57,7 +53,7 @@ struct chronobent_processor {
     std::uint64_t length = 0, delivered = 0;
     double source_position = 0, trajectory_start = 0;
     std::uint64_t trajectory_frames = 0;
-    chronobent_parameters parameters{1,1,1,0};
+    chronobent_controls parameters{1,1,0,2,1,0};
     std::size_t channels = 0;
     unsigned active = 0;
     std::uint32_t fade_length = 0, fade_done = 0;
@@ -66,12 +62,12 @@ struct chronobent_processor {
     Epoch &target() noexcept { return epochs[active ^ unsigned(fading)]; }
     const Epoch &target() const noexcept { return epochs[active ^ unsigned(fading)]; }
     bool ended() const noexcept { return !target().remaining() && !target().buffered; }
-    chronobent_status prepare(Epoch &epoch, double at, const chronobent_parameters &p) noexcept {
+    chronobent_status prepare(Epoch &epoch, double at, const chronobent_controls &p) noexcept {
         const auto history = std::uint64_t(chronobent_window_frames(epoch.dsp.get())) * 4;
         const auto frame = static_cast<std::uint64_t>(std::floor(at));
         epoch.origin = frame > history ? frame - history : 0;
         epoch.reader = reader; epoch.user = user; epoch.position = 0; epoch.buffered = false;
-        auto status = chronobent_reset_parameters(epoch.dsp.get(), length - epoch.origin, &p);
+        auto status = chronobent_reset_controls(epoch.dsp.get(), length - epoch.origin, &p);
         if (status != CHRONOBENT_OK) return status;
         auto skip = std::min(static_cast<std::uint64_t>(std::llround((at - double(epoch.origin)) / p.tempo)), epoch.remaining());
         // Seeking exactly to EOF must finish even when rounding would leave a sample.
@@ -113,12 +109,12 @@ extern "C" chronobent_status chronobent_processor_create(const chronobent_config
 }
 extern "C" void chronobent_processor_destroy(chronobent_processor *instance) { delete instance; }
 
-extern "C" chronobent_status chronobent_processor_set_source(chronobent_processor *p,
-    chronobent_read_fn reader, void *user, std::uint64_t frames, const chronobent_parameters *parameters) {
+extern "C" chronobent_status chronobent_processor_set_source_controls(chronobent_processor *p,
+    chronobent_read_fn reader, void *user, std::uint64_t frames, const chronobent_controls *parameters) {
     if (!p || !valid(parameters) || frames > (UINT64_C(1) << 48) || (frames && !reader))
         return CHRONOBENT_INVALID_ARGUMENT;
     auto &epoch = p->epochs[0];
-    const auto status = chronobent_reset_parameters(epoch.dsp.get(), frames, parameters);
+    const auto status = chronobent_reset_controls(epoch.dsp.get(), frames, parameters);
     if (status != CHRONOBENT_OK) return status;
     epoch.reader = reader; epoch.user = user; epoch.origin = 0; epoch.position = 0; epoch.buffered = false;
     p->epochs[1].reader = nullptr; p->epochs[1].user = nullptr; p->epochs[1].buffered = false;
@@ -128,8 +124,8 @@ extern "C" chronobent_status chronobent_processor_set_source(chronobent_processo
     p->fading = false; p->fade_done = 0; p->ready = true;
     return CHRONOBENT_OK;
 }
-extern "C" chronobent_status chronobent_processor_set_parameters(chronobent_processor *p,
-    const chronobent_parameters *parameters) {
+extern "C" chronobent_status chronobent_processor_set_controls(chronobent_processor *p,
+    const chronobent_controls *parameters) {
     if (!p || !valid(parameters)) return CHRONOBENT_INVALID_ARGUMENT;
     if (!p->ready) return CHRONOBENT_NOT_RESET;
     if (equal(*parameters, p->parameters)) return CHRONOBENT_OK;
@@ -204,7 +200,27 @@ extern "C" chronobent_status chronobent_processor_get_state(const chronobent_pro
     chronobent_processor_state *state) {
     if (!p || !state) return CHRONOBENT_INVALID_ARGUMENT;
     if (!p->ready) return CHRONOBENT_NOT_RESET;
-    *state = {p->length, p->delivered, p->source_position, p->parameters,
+    *state = {p->length, p->delivered, p->source_position, chronobent_dsp::project(p->parameters),
         p->fading ? p->fade_length - p->fade_done : 0, p->ended() ? 1u : 0u};
+    return CHRONOBENT_OK;
+}
+
+extern "C" chronobent_status chronobent_processor_set_source(chronobent_processor *p,
+    chronobent_read_fn reader, void *user, std::uint64_t frames, const chronobent_parameters *parameters) {
+    if (!valid(parameters)) return CHRONOBENT_INVALID_ARGUMENT;
+    const auto controls = chronobent_dsp::extend(*parameters);
+    return chronobent_processor_set_source_controls(p, reader, user, frames, &controls);
+}
+extern "C" chronobent_status chronobent_processor_set_parameters(chronobent_processor *p,
+    const chronobent_parameters *parameters) {
+    if (!valid(parameters)) return CHRONOBENT_INVALID_ARGUMENT;
+    const auto controls = chronobent_dsp::extend(*parameters);
+    return chronobent_processor_set_controls(p, &controls);
+}
+extern "C" chronobent_status chronobent_processor_get_controls(const chronobent_processor *p,
+    chronobent_controls *controls) {
+    if (!p || !controls) return CHRONOBENT_INVALID_ARGUMENT;
+    if (!p->ready) return CHRONOBENT_NOT_RESET;
+    *controls = p->parameters;
     return CHRONOBENT_OK;
 }

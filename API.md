@@ -1,7 +1,7 @@
 # API reference
 
-ChronoBent 0.2.0 provides a C ABI and a header-only C++ ownership wrapper.
-The 0.1.0 entry points, config layout and status numbers remain unchanged.
+ChronoBent 0.3.0 provides a C ABI and a header-only C++ ownership wrapper.
+The 0.1/0.2 C entry points, struct layouts and status numbers remain unchanged.
 Link against the library built for the host architecture. The C++ standard
 runtime is required even when the application calls the C API.
 
@@ -28,6 +28,66 @@ All frame counts count multichannel frames, not individual samples or bytes.
 Input length is limited to 2^48 frames. Samples are finite floats with absolute
 value at most 64; nominal full scale is [-1,1]. Processing can exceed full scale.
 No limiter is applied. Buffers must have space for the requested frame count.
+
+## Extended controls and profiles
+
+`chronobent_default_controls()` returns `{1, 1, 0, 2, CRISP, 0}`.
+This is the extended `chronobent_controls` layout:
+
+| Field | Contract |
+| --- | --- |
+| `tempo` | Finite .25..4 input frames per output frame |
+| `pitch` | Finite .5..2 output/input frequency ratio |
+| `formant_scale` | Zero follows pitch; otherwise finite .5..2 relative to the original source envelope |
+| `envelope_ms` | Finite 1..4 ms cepstral extent; default 2; not processing latency |
+| `transients` | `SMOOTH` (0), `CRISP` (1), or `MIXED` (2), with the `CHRONOBENT_TRANSIENT_` prefix |
+| `reserved` | Must be zero |
+
+An explicit formant scale of 1 preserves the source envelope. Equal pitch and
+formant ratios need no envelope correction. Formant-only processing works at
+unity pitch and tempo. Convert formant semitones with `exp2(st / 12.0)`.
+The amplitude correction is bounded to 0.25..4 and cannot recover absent partials.
+Larger `envelope_ms` retains finer envelope detail; a voice's harmonics can also
+enter that estimate. This parameter does not identify or isolate vocals.
+
+Smooth disables sparse-attack anchoring and onset resets. Crisp retains the
+existing detector. Mixed uses that detector but suppresses onset resets at
+spectral peaks below 500 Hz. Sparse-attack anchoring remains common to Crisp
+and Mixed. No mode performs source separation or promises to suit every mix.
+
+`chronobent_config_for_profile(rate, channels, profile, &config)` validates its
+arguments and selects the smallest power-of-two window covering the profile's
+nominal duration, bounded to 512..8192 frames. Output is unchanged on failure.
+
+| Profile | Nominal duration | Window at 48 kHz | Window at 96 kHz |
+| --- | --- | --- | --- |
+| `CHRONOBENT_PROFILE_COMPACT` | 20 ms | 1024 | 2048 |
+| `CHRONOBENT_PROFILE_BALANCED` | 40 ms | 2048 | 4096 |
+| `CHRONOBENT_PROFILE_DETAILED` | 80 ms | 4096 | 8192 |
+
+These select time/frequency resolution, not distinct DSP engines. Choose before
+creation. A host changing profile creates another processor, transfers its
+immutable source and seeks it before resuming playback. Fixed lookahead latency
+is not implied by a window duration.
+
+Use these additive C entry points:
+
+- `chronobent_reset_controls(engine, frames, &controls)` for a fixed epoch.
+- `chronobent_processor_set_source_controls(processor, reader, user, frames, &controls)` to bind a source.
+- `chronobent_processor_set_controls(processor, &controls)` for a crossfaded control change.
+- `chronobent_processor_get_controls(processor, &controls)` for the complete target settings.
+
+They have the same ownership, allocation, `BUSY`, prefix and rollback contracts
+as their earlier counterparts. All values are copied. Queries perform no DSP
+or source reads and return `NOT_RESET` before binding. Output is untouched on
+query error. Legacy `get_state` projects extended settings into its old layout:
+`transients` is enabled for Crisp or Mixed and `formants` is enabled for any
+explicit formant scale. Use `get_controls` to distinguish their exact values.
+
+The legacy parameter setters reset advanced fields to their old equivalents:
+2 ms envelope, Smooth/Crisp transients and either shifted or preserved formants.
+Legacy `chronobent_reset` retains current options while replacing pitch/tempo.
+Mixing setter families is allowed, but callers must account for that reset.
 
 ## Source ownership and reads
 
@@ -177,7 +237,7 @@ Include [chronobent.hpp](include/chronobent/chronobent.hpp) and construct
 `chronobent_cpp::Processor(config, transition_frames)`. It owns the C handle,
 cannot be copied and can be moved. Construction throws `std::runtime_error`
 on failure. `set_source`, `set_parameters`, `seek`, `render`, `render_planar`
-and `state` return the C status and are `noexcept`. `get()` exposes the borrowed
+`state`, `set_source_controls`, `set_controls` and `controls` return the C status and are `noexcept`. `get()` exposes the borrowed
 C handle; do not destroy it independently. Calls on a moved-from object return
 `INVALID_ARGUMENT` through its null handle.
 

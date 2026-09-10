@@ -100,8 +100,8 @@ double number(const char *arg) {
 }
 
 int main(int argc, char **argv) {
-    if (argc < 5 || argc > 7) {
-        std::fprintf(stderr, "Usage: chronobent-render input.wav output.wav tempo pitch-ratio [tonal|transients] [shift|preserve]\n"
+    if (argc < 5 || argc > 9) {
+        std::fprintf(stderr, "Usage: chronobent-render input.wav output.wav tempo pitch-ratio [tonal|transients|mixed] [shift|preserve|formant-ratio] [envelope-ms] [compact|balanced|detailed]\n"
             "Example: chronobent-render input.wav output.wav 1.08 1.059463\n"
             "Output: float32 WAV; existing output paths are refused.\n");
         return 2;
@@ -111,21 +111,36 @@ int main(int argc, char **argv) {
         if (std::filesystem::exists(std::filesystem::symlink_status(destination)))
             throw std::runtime_error("Output already exists");
         const double tempo = number(argv[3]), pitch = number(argv[4]);
-        bool transients = true;
+        auto controls = chronobent_default_controls();
+        controls.tempo = tempo; controls.pitch = pitch;
         if (argc >= 6) {
             const std::string mode(argv[5]);
-            if (mode != "tonal" && mode != "transients") throw std::runtime_error("Unknown mode");
-            transients = mode == "transients";
+            if (mode != "tonal" && mode != "transients" && mode != "mixed") throw std::runtime_error("Unknown transient mode");
+            controls.transients = mode == "tonal" ? 0u : mode == "mixed" ? 2u : 1u;
         }
-        if (argc == 7 && std::string(argv[6]) != "preserve" && std::string(argv[6]) != "shift")
-            throw std::runtime_error("Unknown formant mode");
+        if (argc >= 7) {
+            const std::string mode(argv[6]);
+            controls.formant_scale = mode == "shift" ? 0 : mode == "preserve" ? 1 : number(argv[6]);
+            if (mode != "shift" && !(controls.formant_scale >= .5 && controls.formant_scale <= 2))
+                throw std::runtime_error("Formant ratio must be .5..2, or shift/preserve");
+        }
+        if (argc >= 8) controls.envelope_ms = number(argv[7]);
+        chronobent_profile profile = CHRONOBENT_PROFILE_BALANCED;
+        if (argc >= 9) {
+            const std::string name(argv[8]);
+            if (name == "compact") profile = CHRONOBENT_PROFILE_COMPACT;
+            else if (name == "detailed") profile = CHRONOBENT_PROFILE_DETAILED;
+            else if (name != "balanced") throw std::runtime_error("Unknown analysis profile");
+        }
         Wav input = load(argv[1]);
-        const chronobent_config config{double(input.rate), input.channels, 0, transients ? 1u : 0u, argc == 7 && std::string(argv[6]) == "preserve" ? 1u : 0u};
+        chronobent_config config{};
+        if (chronobent_config_for_profile(double(input.rate),input.channels,profile,&config) != CHRONOBENT_OK)
+            throw std::runtime_error("Invalid source configuration");
         chronobent *raw = nullptr;
         if (chronobent_create(&config, &raw) != CHRONOBENT_OK) throw std::runtime_error("Cannot create renderer");
         std::unique_ptr<chronobent, decltype(&chronobent_destroy)> engine(raw, chronobent_destroy);
-        if (chronobent_reset(engine.get(), input.audio.size()/input.channels, tempo, pitch) != CHRONOBENT_OK)
-            throw std::runtime_error("Ratios out of range: tempo .25..4, pitch .5..2");
+        if (chronobent_reset_controls(engine.get(), input.audio.size()/input.channels, &controls) != CHRONOBENT_OK)
+            throw std::runtime_error("Controls out of range: tempo .25..4, pitch .5..2, formants .5..2, envelope 1..4 ms");
         const auto frames = chronobent_output_frames(engine.get()), bytes = frames*input.channels*4;
         if (bytes > std::numeric_limits<std::uint32_t>::max()-48) throw std::runtime_error("Output exceeds RIFF capacity");
 #if defined(_WIN32)

@@ -23,7 +23,16 @@ void Fft::transform(Complex *v, bool inverse) const noexcept {
         for (std::size_t base = 0; base < size_; base += width) {
             for (std::size_t k = 0; k < half; ++k) {
                 const Complex root = inverse ? std::conj(roots_[k * stride]) : roots_[k * stride];
-                const Complex a = v[base + k], b = v[base + k + half] * root;
+                const Complex a = v[base + k], value = v[base + k + half];
+                // Input admission bounds all production samples. FFT values
+                // and unit roots are finite and cannot overflow at N <= 8192.
+                // Explicit arithmetic avoids complex nonfinite recovery calls
+                // in every butterfly and permits ordinary loop vectorization.
+                const float rr = value.real() * root.real();
+                const float ii = value.imag() * root.imag();
+                const float ri = value.real() * root.imag();
+                const float ir = value.imag() * root.real();
+                const Complex b(rr - ii, ri + ir);
                 v[base + k] = a + b;
                 v[base + k + half] = a - b;
             }

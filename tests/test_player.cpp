@@ -59,12 +59,59 @@ static double frequency(const std::vector<float> &audio) {
     require(crossings>3,"no tone in speed result");
     return double(crossings-1)*48000/(last-first);
 }
+static void seek_contract(const std::vector<float> &source) {
+    audition::Player player(source,48000);
+    std::array<float,256> left{},right{};
+    until([&]{return player.queued()==4096;});
+    require(!player.seek(48001),"out of range seek admitted");
+    require(player.seek(12000),"paused seek accepted");
+    until([&]{return !player.seeking() && player.queued()>=256;});
+    require(player.source_position()==12000 && player.played()==0,"paused seek accounting");
+    player.pull(left.data(),right.data(),256);
+    for(auto value:left) require(value==0,"paused seek played");
+    player.pause(false);
+    player.pull(left.data(),right.data(),256);
+    for(std::size_t i=128;i<256;++i) require(left[i]==source[(12000+i)*2],"stale queued audio after seek");
+    require(player.source_position()==12256 && player.played()==256,"seek consumer position");
+    player.request(audition::Settings{7,1.3,true,false,true,3,2,3});
+    require(player.seek(20000) && player.seek(10000) && player.seek(30000),"coalesced seek accepted");
+    until([&]{return !player.seeking() && player.queued()>=256;});
+    require(player.source_position()==30000,"last seek wins");
+    player.pull(left.data(),right.data(),256);
+    for(std::size_t i=0;i<256;++i) require(std::isfinite(left[i]) && std::abs(left[i]+right[i])<1e-6,"advanced seek stereo");
+    require(player.seek(48000),"seek EOF");
+    until([&]{return player.ended();});
+    require(player.source_position()==48000,"seek EOF position");
+    player.pause(true);
+    require(player.seek(0),"seek after EOF");
+    until([&]{return !player.seeking() && player.queued()>=256;});
+    require(!player.ended() && player.source_position()==0,"restart after EOF");
+    // Concurrent callback consumption and repeated seek exercise queue ownership.
+    player.pause(false);
+    std::atomic<bool> stop{false};
+    std::thread consumer([&] {
+        std::array<float,73> l{},r{};
+        while(!stop.load()) {
+            player.pull(l.data(),r.data(),l.size());
+            for(std::size_t i=0;i<l.size();++i)
+                require(std::isfinite(l[i]) && std::abs(l[i]+r[i])<1e-6,"concurrent seek stereo");
+            std::this_thread::yield();
+        }
+    });
+    for(unsigned i=0;i<40;++i) {
+        require(player.seek((i*7919)%40000),"concurrent seek accepted");
+        until([&]{return !player.seeking() || player.error();});
+        require(!player.error(),"concurrent seek failed");
+    }
+    stop.store(true); consumer.join();
+}
 int main() {
     std::vector<float> source(48000*2);
     for (std::size_t i=0; i<48000; ++i) {
         source[i*2]=float(0.2*std::sin(6.283185307179586*220*double(i)/48000));
         source[i*2+1]=-source[i*2];
     }
+    seek_contract(source);
     audition::Player player(source, 48000);
     std::array<float, 256> left{}, right{};
     until([&]{return player.queued()>=4096;});

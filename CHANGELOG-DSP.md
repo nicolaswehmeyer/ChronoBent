@@ -1,5 +1,22 @@
 # Change log
 
+## 0.3.0 - 2026-09-10
+
+- Add independent formant scaling, 1 to 4 ms envelope resolution, and Mixed
+  transient handling that preserves low-frequency onset phase continuity.
+- Add Compact, Balanced and Detailed analysis profiles and complete C/C++
+  controls, retaining earlier ABI layouts and entry points.
+- Reduce FFT overhead while preserving tested legacy samples. See
+  [measurements](QUALITY.md#030-regression-and-performance-comparison).
+- Add a reproducible 162-render diagnostic matrix with retained input/output
+  hashes, multi-rate tones, extreme ratios, stereo and vowel-envelope cases.
+- Redesign Lab with a waveform overview, track seek, five-second skips,
+  keyboard transport, timbre controls, analysis selection and output gain.
+- Keep decoded source storage immutable across profile changes. Flush queued
+  audio on seek with a nonwaiting callback handoff and short output blend.
+- Extend source-error, transition, allocation, concurrent-seek and native UI
+  tests. Rewrite the README around runnable integration and measured limits.
+
 ## 0.2.0 - 2026-09-09
 
 - Add a source-bound processor with two preallocated engines, smooth parameter

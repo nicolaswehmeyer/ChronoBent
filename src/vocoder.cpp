@@ -12,7 +12,7 @@ double wrap(double x) noexcept { return x - 2 * pi * std::floor(x / (2 * pi) + 0
 Vocoder::Vocoder(std::size_t size, std::size_t channels, double sample_rate, bool transients, bool formants)
     : size_(size), channels_(channels), bins_(size / 2 + 1), hop_(size / 8),
       flux_min_(std::max<std::size_t>(1, static_cast<std::size_t>(180 * static_cast<double>(size) / sample_rate))),
-      transients_(transients), formants_(formants), fft_(size), envelope_(size, sample_rate), window_(size), attack_analysis_(size), attack_synthesis_(size), overlap_(size * channels), weight_(size),
+      transients_(transients), formant_scale_(formants ? 1 : 0), sample_rate_(sample_rate), fft_(size), envelope_(size, sample_rate), window_(size), attack_analysis_(size), attack_synthesis_(size), overlap_(size * channels), weight_(size),
       spectrum_(size * channels), phase_(bins_ * channels), previous_phase_(bins_ * channels),
       magnitude_(bins_), previous_magnitude_(bins_), rotation_(bins_), next_rotation_(bins_),
       reference_(bins_), peaks_(bins_) {
@@ -111,7 +111,8 @@ void Vocoder::process(const float *input, float *output) noexcept {
     // Keep all channels' phase history, since the reference can change later.
     const auto propagate = [&](std::size_t k) {
         const std::size_t index = reference_[k] * bins_ + k;
-        if (!primed_ || (onset && magnitude_[k] > 1.5 * previous_magnitude_[k])) {
+        const bool reset_band = !mixed_ || double(k) * sample_rate_ / double(size_) >= 500;
+        if (!primed_ || (onset && reset_band && magnitude_[k] > 1.5 * previous_magnitude_[k])) {
             next_rotation_[k] = 0;
         } else {
             const double omega = 2 * pi * static_cast<double>(k) / static_cast<double>(size_);
@@ -137,7 +138,8 @@ void Vocoder::process(const float *input, float *output) noexcept {
     }
     rotation_[0] = 0;
     rotation_[bins_ - 1] = anchored ? wrap(-pi * anchor_shift) : 0;
-    if (formants_ && pitch_ != 1) envelope_.analyze(magnitude_.data());
+    const double envelope_ratio = formant_scale_ == 0 ? 1 : pitch_ / formant_scale_;
+    if (envelope_ratio != 1) envelope_.analyze(magnitude_.data());
     Complex turn;
     for (std::size_t k = 0; k < bins_; ++k) {
         // A locked region shares one rotation. Reuse its complex multiplier
@@ -145,7 +147,7 @@ void Vocoder::process(const float *input, float *output) noexcept {
         if (k == 0 || rotation_[k] != rotation_[k-1] ||
             std::signbit(rotation_[k]) != std::signbit(rotation_[k-1]))
             turn = Complex(static_cast<float>(std::cos(rotation_[k])), static_cast<float>(std::sin(rotation_[k])));
-        const float gain = formants_ && pitch_ != 1 ? envelope_.correction(k, pitch_) : 1;
+        const float gain = envelope_ratio != 1 ? envelope_.correction(k, envelope_ratio) : 1;
         for (std::size_t c = 0; c < channels_; ++c) {
             Complex *s = spectrum_.data() + c * size_;
             s[k] *= turn * gain;

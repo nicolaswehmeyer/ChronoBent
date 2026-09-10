@@ -1,7 +1,7 @@
 # Quality measurements
 
-Version 0.2.0 has synthetic regression coverage. Blinded listening results on
-music and audio-device deadline measurements are still pending.
+Version 0.3.0 has synthetic regression coverage and local music-render diagnostics.
+Blinded listening results and audio-device deadline measurements are still pending.
 
 ## Run the measurements
 
@@ -43,6 +43,65 @@ Player tests cover half, double and fractional speeds with Master Tempo on and
 off, source-position continuity, mixed 16 to 4096-frame callbacks, pause, bypass,
 end of source and thread teardown. These tests use synthetic audio and do not
 measure system audio deadlines.
+
+## 0.3.0 diagnostic matrix
+
+The extended matrix retains generated inputs, float outputs, exact commands,
+renderer and audio hashes, and a JSON report. NumPy is optional for library
+users and required only for this diagnostic tool:
+
+```sh
+python3 -m venv .venv
+.venv/bin/pip install numpy==2.5.3
+.venv/bin/python tools/measure_matrix.py build/chronobent-render matrix-output
+```
+
+The output directory must be new. `--quick` selects a smaller CI matrix.
+The full 162 renders cover 44.1, 48 and 96 kHz, 40/997/9000 Hz tones,
+quarter to quadruple tempo, an octave of pitch in either direction, all transient
+modes and analysis profiles, opposite-phase stereo and nine source-filter vowel
+cases with independently shifted envelopes. Tone frequency is refined by a
+least-squares sinusoid fit. The broad admission bound is 2 cents; it supplements
+the tighter 997 Hz regression above. Duration, finite output and stereo relation
+are hard contracts. Fitted residual energy and envelope error are diagnostics,
+without perceptual pass thresholds. All 162 cases passed on the release Mac.
+
+The vowel model is an independent source-filter target, not a recording of a
+voice. C++ tests require the independently shifted envelope to improve toward
+that target at two settings. Envelope correction remains approximate. A mixed
+track offers no isolated voice envelope, and missing harmonics cannot be restored. Across the eight nonidentity vowel cases, model log-envelope
+error ranged from 6.24 to 15.60 dB on the release Mac. These numbers expose
+remaining envelope mismatch; they are not a perceptual rating.
+
+## 0.3.0 regression and performance comparison
+
+On an Apple M5 Mac using Apple clang 21 and identical Release compiler settings,
+all 29 generated mono outputs and 32 music renders with legacy controls matched
+the frozen 0.2.0 renderer sample for sample. The music comparison used four
+12-second stereo excerpts, octave shifts, half/double tempo and both legacy
+formant modes. Recordings and their provenance remain local. This protects
+those cases; it is not a claim about all audio or all compilers.
+
+The FFT computes finite complex products without a generic non-finite fallback,
+while preserving the separate multiply/add order. Final throughput measurements
+showed 8.18% to 11.54% lower median render time in five alternating
+baseline/candidate runs of ten stereo cases at 48 and 96 kHz. These measure render-loop wall time, not hardware CPU counters
+or audio callback deadline reliability.
+
+A separate local AVFoundation offline harness processes the same four music
+excerpts through this library and an installed reference audio component at
+-12, -5, +5 and +12 semitones, with and without envelope preservation. Input,
+block size and padding are controlled. Reported component delay is compensated
+before level and spectrum analysis. Differences in level-matched log spectra
+show that outputs differ; they cannot identify which output sounds better.
+Float captures can exceed unity, so Lab starts at -9 dB with an adjustable output
+gain. No limiter is included. Commercial audio equivalence is not established.
+
+Player tests now cover paused/playing/end-of-file seeks, queue flushing, rapid
+coalesced commands and concurrent audio consumption. ThreadSanitizer checks the
+queue handoff. Native offscreen view tests exercise controls, source position,
+skips, profile changes and bypass; offline AVFoundation tests exercise the audio
+graph. These do not replace interactive listening or physical device tests.
 
 ## 0.2.0 regression and performance comparison
 

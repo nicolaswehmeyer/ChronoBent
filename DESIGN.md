@@ -16,6 +16,7 @@ accumulate ratio drift.
 | `envelope` | Tapered cepstral smoothing and bounded spectral-envelope correction |
 | `sinc` | 96-tap, 1024-phase interpolated Blackman-windowed low-pass resampling |
 | `chronobent` | C ABI, validation, reset epochs, clipped source reads, ring storage and exact output length |
+| `controls` | Shared validation and legacy/extended parameter translation |
 | `processor` | Bound source, preallocated epoch pair, control preroll, retryable crossfades, seek, planar output and position |
 
 Each instance owns its tables and working buffers. The standard C++ library is
@@ -24,7 +25,8 @@ required. File and audio-device APIs belong to the examples.
 ## Phase and channel handling
 
 The automatic FFT window is the smallest power of two covering 40 ms (within
-the supported 512 to 8192 frame bounds). Synthesis uses an eighth-window hop,
+the supported 512 to 8192 frame bounds). Named Compact and Detailed profiles
+select nominal 20 ms and 80 ms windows using those same bounds. Synthesis uses an eighth-window hop,
 reduced further when needed to keep the analysis hop within one quarter-window.
 Analysis centers are rounded from absolute positions. Phase advances use the
 actual integer distance between consecutive analysis frames, not a nominal
@@ -59,10 +61,23 @@ tones. Sparse-click timing tests do not predict attack quality in dense mixes.
 Changes to this detector need listening tests on music as well as click tests.
 
 Optional formant preservation estimates a smoothed log spectral envelope with
-a tapered 1 to 2 ms cepstral lifter. Correction compares the envelope at the source
-bin and its final pitched frequency, with amplitude gain bounded to 0.25 to 4.
+a tapered cepstral lifter. Its configurable extent is 1 to 4 ms, default 2 ms;
+weights stay at one through half that extent, then taper to zero. Correction
+compares the source-bin envelope with the envelope at `bin * pitch / formant_scale`,
+with amplitude gain bounded to 0.25 to 4. A zero formant scale follows pitch
+without correction. Mixed transients retain the same sparse-attack anchoring
+but suppress flux-triggered phase resets at peaks below 500 Hz.
 It improves the included synthetic vowel oracle, but is approximate for real
 voices and instruments and is not a source-specific formant tracker.
+
+## Bounded FFT arithmetic
+
+The FFT uses explicit finite complex products. Source admission and the maximum
+window/gain bounds keep intermediates finite and far below float overflow.
+Products are separate statements to retain rounding before their sum/difference;
+this avoids the generic complex nonfinite-recovery path without asking for fast
+math. The first combined-expression prototype changed rounding and was rejected.
+The implementation retains the independent DFT oracle and frozen-output checks.
 
 ## Timing and failures
 
@@ -92,8 +107,8 @@ linear crossfade. The example player decodes immutable stereo PCM and uses
 that processor through the public C++ wrapper. Tempo and pitch are separate ratios.
 Master Tempo keeps the selected pitch while changing tempo; disabling it sets
 pitch equal to tempo. Bypass sets both to one. A packed lock-free command word
-publishes all controls coherently, with 0.00001-semitone and 0.000001-tempo
-resolution. Repeated requests coalesce during the 1024-frame transition.
+publishes all controls coherently, with 0.01-semitone, 0.000001-tempo and 0.01 ms envelope
+resolution. The library itself retains double-precision controls. Repeated requests coalesce during the 1024-frame transition.
 
 A new epoch prerolls from earlier source audio and starts at the nearest output
 sample to the current source position (at most one input sample of alignment
@@ -111,6 +126,22 @@ consumed frames. The producer fills even partial free queue space to support
 mixed callback sizes. Destruction stops and joins the worker before source
 storage can retire. A captured shared owner keeps playback alive for the native
 callback. The example requires always-lock-free scalar atomics at compile time.
+
+Seek requests use a coherent frame/serial mailbox. The worker completes any
+pending processor fade, obtains queue ownership, seeks, discards queued frames
+and publishes the new source position. The callback makes one nonblocking atomic
+ownership attempt. It fades to silence if that handoff is busy and blends into
+new audio across 128 consumed frames. It never waits for preroll. Only the worker
+can flush the queue; normal production remains single-producer/single-consumer.
+Queue counters stay monotonic across seeks. Delivered playback counts exclude
+frames discarded by seek. The worker remains available at EOF, so paused and
+ended players can seek without a running audio device.
+
+The app shares a const decoded source across profile changes and recreates only
+the processor/player and audio graph. Its default output gain is -9 dB, applied
+equally to bypass and processed audio. There is no limiter. Tests render the
+actual native view hierarchy offscreen and exercise its transport/control handlers
+without recording the desktop or opening a playback device.
 
 See [API.md](API.md) for control failure rollback, staged crossfade reads and
 explicit seek discontinuities.

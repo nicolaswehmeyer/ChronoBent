@@ -128,6 +128,50 @@ std::vector<float> scenario(std::size_t block, bool planar, unsigned fail_at = 0
     require(state(processor).source_position==16000 && state(processor).ended,"final state");
     return result;
 }
+void advanced() {
+    Source source(16000);
+    auto c = config();
+    for (auto profile : {CHRONOBENT_PROFILE_COMPACT, CHRONOBENT_PROFILE_BALANCED, CHRONOBENT_PROFILE_DETAILED}) {
+        require(chronobent_config_for_profile(48000,2,profile,&c)==CHRONOBENT_OK,"profile");
+        require(c.window_frames==(1024u << unsigned(profile)),"profile window");
+    }
+    require(chronobent_config_for_profile(48000,2,static_cast<chronobent_profile>(3),&c)==CHRONOBENT_INVALID_ARGUMENT &&
+        c.window_frames==4096,"profile rollback");
+    chronobent_cpp::Processor processor(config(),64);
+    auto p=chronobent_default_controls();
+    p.formant_scale=.75; p.envelope_ms=3; p.transients=CHRONOBENT_TRANSIENT_MIXED;
+    require(processor.set_source_controls(Source::read,&source,16000,p)==CHRONOBENT_OK,"advanced bind");
+    chronobent_controls actual{};
+    require(processor.controls(actual)==CHRONOBENT_OK && actual.formant_scale==.75 && actual.transients==2,"advanced query");
+    require(state(processor).parameters.transients==1 && state(processor).parameters.formants==1,"legacy projection");
+    std::array<float,512> out{};
+    std::size_t got=0;
+    forbid_allocation=true;
+    require(processor.render(out.data(),256,got)==CHRONOBENT_OK && got==256,"formant only render");
+    require(processor.seek(9000)==CHRONOBENT_OK,"advanced seek");
+    p.formant_scale=1.5; p.envelope_ms=1;
+    source.unavailable=true;
+    require(processor.set_controls(p)==CHRONOBENT_SOURCE_UNAVAILABLE,"advanced preroll failure");
+    require(processor.controls(actual)==CHRONOBENT_OK && actual.formant_scale==.75,"advanced rollback");
+    source.unavailable=false;
+    require(processor.set_controls(p)==CHRONOBENT_OK,"advanced transition");
+    require(processor.set_controls(p)==CHRONOBENT_OK,"advanced idempotent target");
+    require(processor.render(out.data(),256,got)==CHRONOBENT_OK,"advanced fade");
+    for (int field=0;field<6;++field) {
+        auto bad=p;
+        if(field==0) bad.formant_scale=std::numeric_limits<double>::quiet_NaN();
+        if(field==1) bad.formant_scale=.49;
+        if(field==2) bad.envelope_ms=std::numeric_limits<double>::infinity();
+        if(field==3) bad.envelope_ms=.99;
+        if(field==4) bad.transients=3;
+        if(field==5) bad.reserved=1;
+        require(processor.set_controls(bad)==CHRONOBENT_INVALID_ARGUMENT,"invalid extended controls");
+        require(processor.controls(actual)==CHRONOBENT_OK && actual.formant_scale==1.5 && actual.envelope_ms==1,"invalid controls preserve target");
+    }
+    require(processor.set_parameters(chronobent_default_parameters())==CHRONOBENT_OK,"restore legacy controls");
+    require(processor.controls(actual)==CHRONOBENT_OK && actual.formant_scale==0 && actual.envelope_ms==2 && actual.transients==1,"legacy defaults restored");
+    forbid_allocation=false;
+}
 void failures() {
     Source source(10000);
     chronobent_cpp::Processor processor(config(),64);
@@ -160,7 +204,7 @@ void operator delete[](void *p) noexcept { std::free(p); }
 void operator delete(void *p, std::size_t) noexcept { std::free(p); }
 void operator delete[](void *p, std::size_t) noexcept { std::free(p); }
 int main() {
-    basic(); failures();
+    basic(); failures(); advanced();
     const auto reference=scenario(1,false);
     for (const auto block : {std::size_t(7),std::size_t(257),std::size_t(2048)}) {
         require(scenario(block,false)==reference,"block invariant");

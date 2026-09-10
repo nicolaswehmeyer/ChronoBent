@@ -21,6 +21,7 @@ include/chronobent/chronobent.hpp
 sources.mk
 sources.txt
 src/chronobent.cpp
+src/controls.hpp
 src/envelope.cpp
 src/envelope.hpp
 src/fft.cpp
@@ -37,4 +38,5 @@ tests/test_player.cpp
 tests/test_processor.cpp
 tests/test_wav.py
 tools/export_source.py
+tools/measure_matrix.py
 tools/measure_quality.py

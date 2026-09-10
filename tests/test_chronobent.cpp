@@ -44,9 +44,11 @@ Engine engine(double sample_rate = 48000, std::uint32_t channels = 2, bool trans
     return Engine(p, chronobent_destroy);
 }
 std::vector<float> render(Source &source, double tempo, double pitch, std::size_t chunk = 257,
-                          double sample_rate = 48000, bool transients = true, bool formants = false) {
+                          double sample_rate = 48000, bool transients = true, bool formants = false,
+                          const chronobent_controls *controls = nullptr) {
     auto p = engine(sample_rate, static_cast<std::uint32_t>(source.channels), transients, formants);
     require(chronobent_reset(p.get(), source.audio.size() / source.channels, tempo, pitch) == CHRONOBENT_OK, "reset");
+    if (controls) require(chronobent_reset_controls(p.get(),source.audio.size()/source.channels,controls)==CHRONOBENT_OK,"extended reset");
     const auto count = static_cast<std::size_t>(chronobent_output_frames(p.get()));
     std::vector<float> output(count * source.channels + 16, 19.0f);
     std::size_t written = 0;
@@ -250,6 +252,24 @@ void envelope_quality() {
     }
     std::printf("synthetic vowel log-envelope error: shifted=%.4f preserved=%.4f\n", std::sqrt(old_error/23), std::sqrt(new_error/23));
     require(new_error < old_error*0.6, "envelope preservation failed to improve synthetic vowel");
+    for (double scale : {.75, 1.5}) {
+        auto controls=chronobent_default_controls();
+        controls.transients=0; controls.formant_scale=scale;
+        const auto corrected=render(vowel,1,1,257,48000,false,false,&controls);
+        double raw_error=0, corrected_error=0;
+        for(int h=3;h<=35;++h) {
+            const double expected=vowel_envelope(h*100/scale)/16;
+            const double raw=std::log(std::max(1e-5,partial_amplitude(vowel.audio,h*100))/expected);
+            const double changed=std::log(std::max(1e-5,partial_amplitude(corrected,h*100))/expected);
+            raw_error+=raw*raw; corrected_error+=changed*changed;
+        }
+        std::printf("independent formant scale=%.2f log-envelope error: raw=%.4f corrected=%.4f\n",scale,std::sqrt(raw_error/33),std::sqrt(corrected_error/33));
+        require(corrected_error < raw_error*.75,"independent envelope correction");
+        require(render(vowel,1,1,7,48000,false,false,&controls)==corrected,"formant block invariance");
+    }
+    auto linked=chronobent_default_controls(); linked.tempo=1.08; linked.pitch=1.5;
+    linked.formant_scale=1.5; linked.transients=0;
+    require(render(vowel,1.08,1.5,257,48000,false,false,&linked)==shifted,"linked explicit envelope changed audio");
     Source silence(12000, 8);
     const auto quiet = render(silence, 0.25, 2, 509, 48000, true, true);
     for (float value : quiet) require(value == 0, "formant correction amplified silence");

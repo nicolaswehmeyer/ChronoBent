@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Nicolas Wehmeyer
 #include "chronobent/chronobent.h"
 #include "sinc.hpp"
+#include "controls.hpp"
 #include "vocoder.hpp"
 #include <algorithm>
 #include <array>
@@ -35,14 +36,14 @@ struct chronobent {
     std::int64_t generated = 0;
     double tempo = 1, pitch = 1, rate = 1;
     bool ready = false;
-    bool formants;
+    double formant_scale;
 
     explicit chronobent(const chronobent_config &config)
         : channels(config.channels),
           window(config.window_frames ? config.window_frames : window_size(config.sample_rate)),
           ring_frames(window * 4),
           vocoder(window, channels, config.sample_rate, config.transients != 0, config.formants != 0),
-          input(window * channels), block(window * channels / 4), ring(ring_frames * channels), formants(config.formants != 0) {}
+          input(window * channels), block(window * channels / 4), ring(ring_frames * channels), formant_scale(config.formants ? 1 : 0) {}
 
     chronobent_status read(chronobent_read_fn reader, void *user,
                          std::int64_t first, std::size_t count) noexcept {
@@ -62,7 +63,7 @@ struct chronobent {
 
     chronobent_status ensure(std::int64_t last, chronobent_read_fn reader, void *user) noexcept {
         while (generated <= last) {
-            const bool direct = rate == 1 && (!formants || pitch == 1);
+            const bool direct = rate == 1 && (formant_scale == 0 || formant_scale == pitch);
             const auto synthesis = direct ? generated : vocoder.synthesis_start();
             const auto count = direct ? window / 8 : vocoder.hop();
             const auto status = read(reader, user, direct ? generated : vocoder.analysis_start(), direct ? count : window);
@@ -129,7 +130,8 @@ extern "C" chronobent_status chronobent_render(chronobent *instance, chronobent_
     frames = static_cast<std::size_t>(std::min<std::uint64_t>(frames, instance->output_length - instance->position));
     const auto channels = instance->channels;
     // Exact identity includes endpoints; no window, latency or resampling filter.
-    if (instance->tempo == 1 && instance->pitch == 1) {
+    if (instance->tempo == 1 && instance->pitch == 1 &&
+        (instance->formant_scale == 0 || instance->formant_scale == 1)) {
         while (*produced < frames) {
             const auto count = std::min(frames - *produced, instance->window);
             const auto status = instance->read(reader, user, static_cast<std::int64_t>(instance->position), count);
@@ -180,7 +182,7 @@ extern "C" std::uint64_t chronobent_output_frames(const chronobent *instance) {
 extern "C" std::uint32_t chronobent_window_frames(const chronobent *instance) {
     return instance ? static_cast<std::uint32_t>(instance->window) : 0;
 }
-extern "C" const char *chronobent_version(void) { return "0.2.0"; }
+extern "C" const char *chronobent_version(void) { return "0.3.0"; }
 
 extern "C" chronobent_config chronobent_default_config(double sample_rate, std::uint32_t channels) {
     return {sample_rate, channels, 0, 1, 0};
@@ -201,10 +203,27 @@ extern "C" const char *chronobent_status_string(chronobent_status status) {
 }
 extern "C" chronobent_status chronobent_reset_parameters(chronobent *instance,
     std::uint64_t input_frames, const chronobent_parameters *p) {
-    if (!instance || !p || input_frames > maximum_frames || !(p->tempo >= .25 && p->tempo <= 4) ||
-        !(p->pitch >= .5 && p->pitch <= 2) || p->transients > 1 || p->formants > 1)
+    if (!chronobent_dsp::valid(p)) return CHRONOBENT_INVALID_ARGUMENT;
+    const auto controls = chronobent_dsp::extend(*p);
+    return chronobent_reset_controls(instance, input_frames, &controls);
+}
+extern "C" chronobent_controls chronobent_default_controls(void) { return {1, 1, 0, 2, 1, 0}; }
+extern "C" chronobent_status chronobent_reset_controls(chronobent *instance,
+    std::uint64_t input_frames, const chronobent_controls *p) {
+    if (!instance || !chronobent_dsp::valid(p) || input_frames > maximum_frames)
         return CHRONOBENT_INVALID_ARGUMENT;
-    instance->formants = p->formants != 0;
-    instance->vocoder.options(p->transients != 0, p->formants != 0);
+    instance->formant_scale = p->formant_scale;
+    instance->vocoder.options(p->transients, p->formant_scale, p->envelope_ms);
     return chronobent_reset(instance, input_frames, p->tempo, p->pitch);
+}
+extern "C" chronobent_status chronobent_config_for_profile(double rate, std::uint32_t channels,
+    chronobent_profile profile, chronobent_config *config) {
+    if (!config || !(rate >= 8000 && rate <= 192000) || !channels || channels > 8 ||
+        profile < CHRONOBENT_PROFILE_COMPACT || profile > CHRONOBENT_PROFILE_DETAILED)
+        return CHRONOBENT_INVALID_ARGUMENT;
+    auto result = chronobent_default_config(rate, channels);
+    result.window_frames = window_size(rate * (profile == CHRONOBENT_PROFILE_COMPACT ? .5 :
+                                               profile == CHRONOBENT_PROFILE_DETAILED ? 2 : 1));
+    *config = result;
+    return CHRONOBENT_OK;
 }

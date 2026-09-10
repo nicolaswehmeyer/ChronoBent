@@ -30,6 +30,16 @@ public:
     chronobent_status set_parameters(chronobent_parameters parameters) noexcept {
         return chronobent_processor_set_parameters(get(), &parameters);
     }
+    chronobent_status set_source_controls(chronobent_read_fn read, void *user, uint64_t frames,
+        chronobent_controls controls) noexcept {
+        return chronobent_processor_set_source_controls(get(), read, user, frames, &controls);
+    }
+    chronobent_status set_controls(chronobent_controls controls) noexcept {
+        return chronobent_processor_set_controls(get(), &controls);
+    }
+    chronobent_status controls(chronobent_controls &out) const noexcept {
+        return chronobent_processor_get_controls(get(), &out);
+    }
     chronobent_status seek(uint64_t frame) noexcept { return chronobent_processor_seek(get(), frame); }
     chronobent_status render(float *out, size_t frames, size_t &produced) noexcept {
         return chronobent_processor_render(get(), out, frames, &produced);
