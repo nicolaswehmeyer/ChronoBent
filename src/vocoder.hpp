@@ -32,8 +32,8 @@ private:
     Fft fft_;
     Envelope envelope_;
     std::vector<float> window_, attack_analysis_, attack_synthesis_, overlap_, weight_;
-    std::vector<Complex> spectrum_;
-    std::vector<double> phase_, previous_phase_, magnitude_, previous_magnitude_, rotation_, next_rotation_;
+    std::vector<Complex> spectrum_, previous_spectrum_;
+    std::vector<double> magnitude_, previous_magnitude_, rotation_, next_rotation_;
     std::vector<std::size_t> reference_, peaks_;
 };
 }

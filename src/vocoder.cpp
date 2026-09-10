@@ -13,7 +13,7 @@ Vocoder::Vocoder(std::size_t size, std::size_t channels, double sample_rate, boo
     : size_(size), channels_(channels), bins_(size / 2 + 1), hop_(size / 8),
       flux_min_(std::max<std::size_t>(1, static_cast<std::size_t>(180 * static_cast<double>(size) / sample_rate))),
       transients_(transients), formant_scale_(formants ? 1 : 0), sample_rate_(sample_rate), fft_(size), envelope_(size, sample_rate), window_(size), attack_analysis_(size), attack_synthesis_(size), overlap_(size * channels), weight_(size),
-      spectrum_(size * channels), phase_(bins_ * channels), previous_phase_(bins_ * channels),
+      spectrum_(size * channels), previous_spectrum_(bins_ * channels),
       magnitude_(bins_), previous_magnitude_(bins_), rotation_(bins_), next_rotation_(bins_),
       reference_(bins_), peaks_(bins_) {
     for (std::size_t i = 0; i < size_; ++i)
@@ -42,7 +42,7 @@ void Vocoder::reset(double rate, double pitch) noexcept {
     std::fill(overlap_.begin(), overlap_.end(), 0.0f);
     std::fill(weight_.begin(), weight_.end(), 0.0f);
     std::fill(rotation_.begin(), rotation_.end(), 0.0);
-    std::fill(previous_phase_.begin(), previous_phase_.end(), 0.0);
+    std::fill(previous_spectrum_.begin(), previous_spectrum_.end(), Complex(0, 0));
     std::fill(previous_magnitude_.begin(), previous_magnitude_.end(), 0.0);
 }
 
@@ -80,7 +80,6 @@ void Vocoder::process(const float *input, float *output) noexcept {
         Complex *s = spectrum_.data() + c * size_;
         for (std::size_t i = 0; i < size_; ++i) s[i] = Complex(input[i * channels_ + c] * analysis_window[i], 0);
         fft_.transform(s, false);
-        for (std::size_t k = 0; k < bins_; ++k) phase_[c * bins_ + k] = std::atan2(s[k].imag(), s[k].real());
     }
     double flux = 0, high_energy = 0;
     for (std::size_t k = 0; k < bins_; ++k) {
@@ -108,15 +107,20 @@ void Vocoder::process(const float *input, float *output) noexcept {
             peaks_[peak_count++] = k;
     // Locked regions consume only their peak's phase estimate. Avoid computing
     // discarded estimates for every non-peak bin; anchored frames need none.
-    // Keep all channels' phase history, since the reference can change later.
+    // Retain every channel's original spectrum because peaks and reference
+    // channels can change. Evaluate phase only where propagation consumes it.
     const auto propagate = [&](std::size_t k) {
         const std::size_t index = reference_[k] * bins_ + k;
         const bool reset_band = !mixed_ || double(k) * sample_rate_ / double(size_) >= 500;
         if (!primed_ || (onset && reset_band && magnitude_[k] > 1.5 * previous_magnitude_[k])) {
             next_rotation_[k] = 0;
         } else {
+            const Complex now = spectrum_[reference_[k] * size_ + k];
+            const Complex before = previous_spectrum_[index];
+            const double phase = std::atan2(now.imag(), now.real());
+            const double previous_phase = std::atan2(before.imag(), before.real());
             const double omega = 2 * pi * static_cast<double>(k) / static_cast<double>(size_);
-            const double delta = omega * advance + wrap(phase_[index] - previous_phase_[index] - omega * advance);
+            const double delta = omega * advance + wrap(phase - previous_phase - omega * advance);
             next_rotation_[k] = wrap(rotation_[k] + delta * (static_cast<double>(hop_) / advance - 1));
         }
     };
@@ -140,6 +144,9 @@ void Vocoder::process(const float *input, float *output) noexcept {
     rotation_[bins_ - 1] = anchored ? wrap(-pi * anchor_shift) : 0;
     const double envelope_ratio = formant_scale_ == 0 ? 1 : pitch_ / formant_scale_;
     if (envelope_ratio != 1) envelope_.analyze(magnitude_.data());
+    // Save the analysis spectrum before applying any synthesis rotation/gain.
+    for (std::size_t c = 0; c < channels_; ++c)
+        std::copy_n(spectrum_.data() + c * size_, bins_, previous_spectrum_.data() + c * bins_);
     Complex turn;
     for (std::size_t k = 0; k < bins_; ++k) {
         // A locked region shares one rotation. Reuse its complex multiplier
@@ -172,7 +179,6 @@ void Vocoder::process(const float *input, float *output) noexcept {
     std::fill(overlap_.end() - static_cast<std::ptrdiff_t>(hop_ * channels_), overlap_.end(), 0.0f);
     std::move(weight_.begin() + static_cast<std::ptrdiff_t>(hop_), weight_.end(), weight_.begin());
     std::fill(weight_.end() - static_cast<std::ptrdiff_t>(hop_), weight_.end(), 0.0f);
-    std::copy(phase_.begin(), phase_.end(), previous_phase_.begin());
     std::copy(magnitude_.begin(), magnitude_.end(), previous_magnitude_.begin());
     previous_analysis_ = analysis;
     primed_ = true;

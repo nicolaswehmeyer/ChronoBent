@@ -126,6 +126,9 @@ void identity_and_blocks() {
     require(a == render(s, 1.071, 0.63, 257), "block size changed samples");
     require(a == render(s, 1.071, 0.63, 8192), "large block changed samples");
     require(a.size() / 2 == 44819, "fractional duration rounded incorrectly");
+    auto octave = render(s, 1.159912109375, 2.0, 1);
+    require(octave == render(s, 1.159912109375, 2.0, 257), "reused sinc coefficients changed samples");
+    require(octave == render(s, 1.159912109375, 2.0, 8192), "large block coefficient reuse changed samples");
     Source empty(0, 2);
     require(render(empty, 1, 1).empty(), "empty source");
     for (std::size_t length : {1u, 7u, 63u, 256u}) {
