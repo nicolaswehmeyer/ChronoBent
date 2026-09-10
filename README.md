@@ -6,7 +6,7 @@
 
 An MIT-licensed C++17 audio library with a C ABI, a C++ wrapper and a native macOS lab.
 
-[Get started](#build) · [API reference](API.md) · [Download Lab](https://github.com/nicolaswehmeyer/ChronoBent/releases/tag/v0.3.0) · [Quality and limits](QUALITY.md)
+[Get started](#build) · [API reference](API.md) · [Download Lab](https://github.com/nicolaswehmeyer/ChronoBent/releases/tag/v0.2.0) · [Quality and limits](QUALITY.md)
 
 </div>
 
@@ -191,10 +191,11 @@ It loads the source into memory. On Windows, use `build/Release/chronobent-rende
 
 ## ChronoBent Lab
 
-[Download ChronoBent Lab 0.3.0 for macOS](https://github.com/nicolaswehmeyer/ChronoBent/releases/download/v0.3.0/ChronoBent-Lab-0.3.0-macOS-universal.dmg).
-The universal app targets macOS 11 or later on Apple Silicon and Intel.
-Release signing and runtime verification are documented on the
-[release page](https://github.com/nicolaswehmeyer/ChronoBent/releases/tag/v0.3.0).
+The redesigned 0.3.0 app is available from source. Its packaged download is
+pending Apple notarization and package verification.
+[Download the previously verified Lab 0.2.0 for macOS](https://github.com/nicolaswehmeyer/ChronoBent/releases/download/v0.2.0/ChronoBent-Lab-0.2.0-macOS-universal.dmg),
+or build 0.3.0 using the command below. The app targets macOS 11 or later on
+Apple Silicon and Intel. The controls described here belong to 0.3.0.
 
 Open a track, then press **Space** to play or pause. Drag the position slider to
 seek, or use the **arrow keys** to skip five seconds. Restart returns to the
