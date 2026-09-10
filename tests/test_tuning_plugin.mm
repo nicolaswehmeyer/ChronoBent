@@ -49,9 +49,11 @@ int main(int argc,char **argv) {
                 NSView *view=[provider uiViewForAudioUnit:host.unit withSize:NSMakeSize(1040,720)];require(view,"create host editor for tuning");
                 NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,1040,720) styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];window.releasedWhenClosed=NO;window.contentView=view;
                 WKWebView *web=nil;require(until([&]{web=webview(view);return web!=nil;}),"tuning WebKit view");
-                require(until([&]{return [js(web,@"Boolean(document.getElementById('tune') && !document.getElementById('tune').disabled)") boolValue];}),"Note Studio button admitted current source");
+                require(until([&]{return [js(web,@"document.readyState === 'complete' && Boolean(document.getElementById('tune') && !document.getElementById('tune').disabled)") boolValue];}),"Note Studio button admitted current source");
                 js(web,@"document.getElementById('tune').click()");NSWindow *studio=nil;
-                require(until([&]{for(NSWindow *candidate in NSApp.windows)if([candidate.title isEqualToString:@"ChronoBent · Note Studio"] && candidate.visible){studio=candidate;return true;}return false;}),"native Note Studio opened from plugin");
+                const bool opened=until([&]{for(NSWindow *candidate in NSApp.windows)if([candidate.title isEqualToString:@"ChronoBent · Note Studio"] && candidate.visible){studio=candidate;return true;}return false;});
+                if(!opened){std::fprintf(stderr,"Note Studio open failed for %s; document=%s\n",effect?"FX":"Instrument",[[js(web,@"document.readyState + ' disabled=' + document.getElementById('tune').disabled") description] UTF8String]);for(NSWindow *candidate in NSApp.windows)std::fprintf(stderr,"window '%s' visible=%d\n",candidate.title.UTF8String,int(candidate.visible));}
+                require(opened,"native Note Studio opened from plugin");
                 auto analyze=button_named(studio.contentView,@"Analyze melody");require(analyze && analyze.enabled,"native analyze action");[analyze performClick:nil];
                 NSButton *use=nil;require(until([&]{use=button_named(studio.contentView,@"Use tuned audio");return use && use.enabled;}),"asynchronous analysis completed");
                 auto graph=labeled(studio.contentView,@"Detected pitch and editable target notes");require(graph && [studio makeFirstResponder:graph],"keyboard note selection");
