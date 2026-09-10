@@ -190,7 +190,7 @@ extern "C" std::uint64_t chronobent_output_frames(const chronobent *instance) {
 extern "C" std::uint32_t chronobent_window_frames(const chronobent *instance) {
     return instance ? static_cast<std::uint32_t>(instance->window) : 0;
 }
-extern "C" const char *chronobent_version(void) { return "0.4.0"; }
+extern "C" const char *chronobent_version(void) { return "0.5.0"; }
 
 extern "C" chronobent_config chronobent_default_config(double sample_rate, std::uint32_t channels) {
     return {sample_rate, channels, 0, 1, 0};

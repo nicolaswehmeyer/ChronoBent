@@ -21,7 +21,7 @@ int main(void) {
     if (chronobent_render(instance, read_source, source, output, 4, &produced) != CHRONOBENT_END || produced != 3) return 3;
     for (i = 0; i < 3; ++i) if (output[i] != source[i]) return 4;
     if (output[3] != 17) return 5;
-    if (strcmp(chronobent_version(), "0.4.0") != 0) return 6;
+    if (strcmp(chronobent_version(), "0.5.0") != 0) return 6;
     {
         chronobent_controls controls = chronobent_default_controls();
         chronobent_processor *processor = NULL;

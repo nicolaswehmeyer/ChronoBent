@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 Nicolas Wehmeyer
-"""Export only reviewed text sources, with no VCS metadata or generated files."""
+"""Export reviewed sources and exact owned artwork, without VCS or build files."""
 import argparse
 import hashlib
 import os
@@ -12,6 +12,10 @@ import tempfile
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+REVIEWED_IMAGES = {
+    'docs/images/chronobent-0.5-hero.png':
+        'eeef07bc81ef0dc953d31cd3cdc92806985b65c5c16840918833bfe0ab1c7dd1',
+}
 
 
 def export(destination, scanner):
@@ -28,15 +32,20 @@ def export(destination, scanner):
             if (str(relative) != name or relative.is_absolute() or
                     (any(part.startswith('.') for part in relative.parts) and name not in {'.gitignore', '.github/workflows/ci.yml'}) or
                     any(part in {'build', '__pycache__'} for part in relative.parts) or
-                    relative.suffix not in {'.h', '.hpp', '.c', '.cpp', '.mm', '.py', '.md', '.txt', '.mk', '.in', '.yml', ''}):
+                    (relative.suffix not in {'.h', '.hpp', '.c', '.cpp', '.mm', '.py', '.md', '.txt', '.mk', '.in', '.yml', '.html', '.css', '.js', '.plist', ''} and name not in REVIEWED_IMAGES)):
                 raise ValueError(f'Invalid source inventory path: {name}')
             source = ROOT / name
             if source.is_symlink() or not source.is_file() or not source.resolve().is_relative_to(ROOT):
                 raise ValueError(f'Not a regular contained source file: {name}')
             data = source.read_bytes()
-            if len(data) > 1000000 or b'\0' in data:
-                raise ValueError(f'Non-text or oversized source: {name}')
-            data.decode('utf-8')
+            if name in REVIEWED_IMAGES:
+                if (len(data) > 8 * 1024 * 1024 or not data.startswith(b'\x89PNG\r\n\x1a\n') or
+                        hashlib.sha256(data).hexdigest() != REVIEWED_IMAGES[name]):
+                    raise ValueError(f'Unreviewed image bytes: {name}')
+            else:
+                if len(data) > 1000000 or b'\0' in data:
+                    raise ValueError(f'Non-text or oversized source: {name}')
+                data.decode('utf-8')
             target = package / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(data)

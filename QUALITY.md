@@ -187,3 +187,43 @@ Further measurements should cover formant positions in real vowels, phase
 relationships between spectral peaks in dense mixes, and onset envelopes in
 percussion. Use listening results alongside these measurements when assessing
 changes to phase reconstruction, transient handling or analysis resolution.
+
+## 0.5.0 instrument validation scope
+
+The 0.5 release candidate adds a sample-instrument host. Apart from its version
+string, the DSP implementation is byte-identical to the 0.4 development source;
+the wide-range numerical and musical limitations above still apply. An instrument
+is not evidence of a new time-stretching algorithm or perceptual parity.
+
+Local universal macOS validation passes 13 CTest checks, including the existing
+SDK/Lab gates plus instrument and native import/host tests. The instrument checks
+match the prepared attack and streamed continuation against a separate DSP
+instance (maximum absolute error below 6e-9 in the 8 kHz stereo unity fixture),
+exercise looping, sustain, rapid voice stealing, source replacement and concurrent
+snapshots, and forbid allocations on the live MIDI/render thread. The final
+ThreadSanitizer instrument run passes. The native host tests cover embedded-state
+audio identity, malformed-state refusal without parameter mutation, sample-offset
+MIDI, offline first-note readiness, automation, looping and transport reset.
+
+Native import checks preserve float WAV samples exactly at their original rate;
+8/48/96/192 kHz conversions check duration, tone frequency and linked stereo.
+The native WebKit editor test and browser interaction checks cover parameter
+normalization, typed/fine controls, Apply state, keyboard MIDI, formant activation,
+repeated open/close and actual rendered layout. VST3 validation passes 47 tests;
+Apple AU validation passes. Instrument, import, AU host and Lab audio gates also
+run successfully through Rosetta using the x86_64 slices. This is not a test on
+an Intel physical Mac or a direct Logic Pro/Ableton Live session.
+
+Source audio is held in memory and saved inside projects. Each preparation bank
+reserves up to half a second of stereo float samples for each of 49 keys: about
+9.4 MB at 48 kHz or 37.6 MB at 192 kHz, plus its source storage. Two banks allow
+safe replacement. Four fixed stereo voice queues reserve another 2.1 MB; DSP
+filters and scratch are additional. Long source files, conversion and project
+serialization need further host memory. Four simultaneous voices are the limit.
+
+The live callback never waits for a worker; starvation yields silence and an
+underrun report, not a claimed correct render. Offline rendering permits bounded
+waits and reports preparation timeouts. Wait for Ready before recording/bouncing,
+and resolve reported errors before accepting output. Host buffer size, competing
+plugins and machine speed still affect real-time reliability. No broad listening
+qualification, host-version matrix or device-hardware qualification is claimed.

@@ -1,6 +1,6 @@
 # API reference
 
-ChronoBent 0.4.0 provides a C ABI and a header-only C++ ownership wrapper.
+ChronoBent 0.5.0 provides a C ABI and a header-only C++ ownership wrapper.
 The 0.1/0.2/0.3 C entry points, struct layouts and status numbers remain unchanged.
 Link against the library built for the host architecture. The C++ standard
 runtime is required even when the application calls the C API.

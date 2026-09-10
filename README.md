@@ -2,22 +2,84 @@
 
 # ChronoBent
 
-**Pitch, tempo and timbre. Independently controlled.**
+**Time bends. Sound becomes.**
 
-An MIT-licensed C++17 audio library with a C ABI, a C++ wrapper and a native macOS lab.
+![ChronoBent Lab and the AU/VST3 instrument in a 3D product illustration](docs/images/chronobent-0.5-hero.png)
 
-[Get started](#build) · [API reference](API.md) · [Download Lab](https://github.com/nicolaswehmeyer/ChronoBent/releases/tag/v0.2.0) · [Quality and limits](QUALITY.md)
+**Play a sample. Reimagine a track. Build something of your own.**
+
+[Instrument](#chronobent-instrument) · [Lab](#chronobent-lab) · [Build the SDK](#build) · [API](API.md) · [Releases](https://github.com/nicolaswehmeyer/ChronoBent/releases)
 
 </div>
 
-## What you can build
+## One engine. Two ways to explore.
 
-A player that changes speed while keeping its key. An editor that transposes
-vocals while controlling their formants. A renderer that processes audio with
-bounded working memory. ChronoBent supplies the DSP and source timeline;
-your application owns storage, threads and audio devices.
+**ChronoBent Instrument** turns a sound into something you can play. Load a sample,
+pull its pitch and time in separate directions, colour its timbre, and find a new
+part on the keyboard. A sculpted dark interface puts five tactile controls,
+a luminous waveform and four voices within reach.
 
-| Control | Capability |
+**ChronoBent Lab** gives an entire track room to move. Change key without changing
+speed, slow a passage while keeping its key, audition a different timbre, or jump
+through the waveform and compare against bypass. A native macOS workspace for
+listening, experimenting and understanding the engine.
+
+| | Instrument | Lab |
+| --- | --- | --- |
+| Start with | A factory sound or your own sample | A local audio file |
+| Work in | A macOS AU or VST3 instrument track | A standalone macOS app |
+| Explore | Four-voice MIDI playback, envelope, loop and timbre | Track playback, seek, Master Tempo and independent formants |
+| Pitch | ±24 st knob plus ±24 st keyboard transposition | ±48 st, including fractional values |
+| Speed | 0.5×–2×, independent of played note | 50%–200% |
+| Platform | Apple Silicon and Intel, macOS 11+ | Apple Silicon and Intel, macOS 11+ |
+
+The image above is a generated 3D presentation based on the actual application
+interfaces. These are software tools; no physical hardware is required.
+
+## Get ChronoBent
+
+**0.5.0 is a release candidate.** Source builds are available now. Lab 0.5.0 and
+Instrument 0.5.0 universal packages are awaiting Apple notarization; their public
+binary download is not ready yet. [Previously verified Lab 0.2.0](https://github.com/nicolaswehmeyer/ChronoBent/releases/download/v0.2.0/ChronoBent-Lab-0.2.0-macOS-universal.dmg)
+remains available and has an earlier feature set.
+
+- **Make music:** [build the AU/VST3 instrument](plugin/README.md#build-the-plugins).
+- **Explore audio:** [build ChronoBent Lab](#chronobent-lab).
+- **Develop:** use the MIT C++17 library through its C ABI or C++ wrapper.
+
+The AU targets Logic Pro and other AU instrument hosts; Ableton Live can use VST3
+or AU on macOS. Automated format/native-host validation is recorded in
+[the instrument guide](plugin/README.md). Direct Logic Pro and Ableton Live session
+checks remain outstanding; this is not a claim of qualification in every DAW.
+
+## ChronoBent Instrument
+
+Choose **Glass Circuit**, **Soft Current** or **Copper Bloom**, or load your own
+sample. Set **Pitch**, **Time** and **Timbre**, press **Apply Sound**, wait for
+**Ready to Play**, and play a melody or chord. The instrument keeps transformed
+duration independent of the note you play.
+
+- Four voices, velocity, sustain pedal, loop and a directly playable keyboard.
+- Fine pitch and independent formant colour, with three transient modes and
+  three analysis profiles.
+- Automatable attack, release, output and loop controls; preparation controls
+  are applied explicitly before playing.
+- Embedded sample and settings in your DAW project, so the original file can move.
+- Local processing, local interface assets and system fonts. No account or
+  network service is needed to make sound.
+
+Drag knobs, Shift-drag for finer control, double-click to reset, or type a value.
+Samples can be mono or stereo, up to 120 seconds. This first release does not
+implement pitch wheel, MPE, slicing or host-tempo sync. See the
+[complete controls, installation and workflow](plugin/README.md).
+
+## The DSP inside
+
+The same independent engine is available for your own player, editor or renderer.
+Your application owns storage, scheduling and audio devices; ChronoBent supplies
+the processing and source timeline.
+
+| Control | SDK capability |
 | --- | --- |
 | Tempo | 0.25 to 4 times speed, independent of pitch |
 | Pitch | Up to four octaves down or up, selected at creation |
@@ -26,21 +88,12 @@ your application owns storage, threads and audio devices.
 | Analysis | Compact, Balanced and Detailed window profiles |
 | Channels | 1 to 8 with linked phase processing |
 | Playback | Seek, parameter crossfades, planar or interleaved output |
-| Integration | C ABI, move-only C++ wrapper, CMake package, static or shared library |
+| Integration | C ABI, C++ wrapper, CMake package, static or shared library |
 
-**0.4.0 is experimental.** Its processing contracts have automated tests, but
-musical transparency is not established across all material and settings.
-The source must support random-access reads. This is not a live-input effect.
-
-## New in 0.4.0
-
-- Select a pitch range at creation, up to -48 through +48 semitones, including fractional values.
-- Use the full range in Lab and the WAV renderer, with independent tempo and formants.
-- Longer anti-alias filters for shifts above +12 semitones, allocated before processing.
-- Existing creation functions retain their original range and filter capacity.
-- Extended numerical, allocation, seek and source-retry regressions.
-
-See [the changelog](CHANGELOG-DSP.md) and [measurement scope](QUALITY.md).
+Processing contracts have automated tests. Musical transparency is not established
+across all material and settings, and extreme shifts can expose artifacts. Source
+audio must support random-access reads; the DSP is not a live-input effect.
+See [quality and limits](QUALITY.md) and [the changelog](CHANGELOG-DSP.md).
 
 ## Build
 
@@ -69,9 +122,10 @@ The package is tested with static/shared builds on Linux, macOS and Windows.
 | CMake option | Default | Purpose |
 | --- | --- | --- |
 | `BUILD_SHARED_LIBS` | `OFF` | Shared library with exported C symbols |
-| `CHRONOBENT_BUILD_TESTS` | `ON` | DSP, API, player and renderer regressions |
+| `CHRONOBENT_BUILD_TESTS` | `ON` | DSP, API, player, instrument and renderer regressions |
 | `CHRONOBENT_BUILD_EXAMPLES` | `ON` | WAV renderer, benchmark and C/C++ consumers |
 | `CHRONOBENT_BUILD_PITCH_LAB` | `OFF` | Native macOS audition app |
+| `CHRONOBENT_BUILD_PLUGINS` | `OFF` | macOS AU/VST3 instrument with pinned external dependencies |
 | `CHRONOBENT_SANITIZE` | `OFF` | Address and undefined-behavior sanitizers |
 
 ## C++ integration
@@ -196,10 +250,9 @@ It loads the source into memory. On Windows, use `build/Release/chronobent-rende
 
 ## ChronoBent Lab
 
-The 0.4.0 app is available from source; a packaged download is not available.
-[Download the previously verified Lab 0.2.0 for macOS](https://github.com/nicolaswehmeyer/ChronoBent/releases/download/v0.2.0/ChronoBent-Lab-0.2.0-macOS-universal.dmg),
-or build 0.4.0 using the command below. The app targets macOS 11 or later on
-Apple Silicon and Intel. The controls described here belong to 0.4.0.
+Build the 0.5.0 app below while its universal package awaits notarization.
+It targets macOS 11 or later on Apple Silicon and Intel. The controls described
+here belong to 0.5.0; the earlier verified 0.2.0 download has fewer features.
 
 Open a track, then press **Space** to play or pause. Drag the position slider to
 seek, or use the **arrow keys** to skip five seconds. Restart returns to the
@@ -234,6 +287,6 @@ and include regressions that protect timing, stereo and source lifetime.
 
 The [MIT license](LICENSE) permits use in open-source and commercial software.
 Keep its copyright and license notice with redistributed copies.
-[export-files.txt](export-files.txt) lists the reviewed source package;
+[export-files.txt](export-files.txt) lists the reviewed source and exact owned marketing image;
 `python3 tools/export_source.py /path/to/new.zip` scans it with Gitleaks and creates
 a deterministic source archive.

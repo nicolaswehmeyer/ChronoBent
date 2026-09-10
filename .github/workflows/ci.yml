@@ -53,3 +53,16 @@ jobs:
       - run: python3 -m venv matrix-env
       - run: matrix-env/bin/python -m pip install numpy==2.5.3
       - run: matrix-env/bin/python tools/measure_matrix.py build/chronobent-render matrix-output --quick --wide
+  mac-plugins:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - run: python3 tools/setup_plugin_dependencies.py "$RUNNER_TEMP/chronobent-dependencies"
+      - run: cmake -S . -B build-plugins -DCMAKE_BUILD_TYPE=Release -DCHRONOBENT_BUILD_PLUGINS=ON -DIPLUG2_DIR="$RUNNER_TEMP/chronobent-dependencies/iPlug2"
+      - run: cmake --build build-plugins --parallel 2
+      - run: ctest --test-dir build-plugins --output-on-failure
+      - run: cmake -S "$RUNNER_TEMP/chronobent-dependencies/vst3sdk" -B build-validator -DCMAKE_BUILD_TYPE=Release -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF
+      - run: cmake --build build-validator --target validator --parallel 2
+      - run: build-validator/bin/Release/validator build-plugins/out/ChronoBent.vst3

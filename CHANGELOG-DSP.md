@@ -1,6 +1,21 @@
 # Change log
 
-## 0.4.0 - Unreleased
+## 0.5.0 - Release candidate
+
+- Add a macOS AU/VST3 sample instrument with four voices, three original factory
+  sounds, local sample import, MIDI/sustain/loop, attack/release and embedded state.
+- Add a sculpted local WebView interface with waveform, five knobs, typed values,
+  keyboard interaction, MIDI feedback and explicit sound preparation.
+- Keep source and worker ownership outside the independent DSP. Guard source
+  publication/retirement, bound voice queues and keep the live callback free of
+  allocation, file access, locks and DSP resets.
+- Add instrument concurrency/allocation, native import, MIDI timing, state
+  roundtrip/refusal, editor lifecycle and format-validation coverage.
+- Include the extended pitch-range work below and a shared Lab/Instrument
+  product illustration. The numerical DSP is unchanged from the 0.4.0 milestone.
+- Universal binary distribution remains pending Apple notarization.
+
+## 0.4.0 - Development milestone, included in 0.5.0
 
 - Add creation-time pitch ranges up to 1/16..16 (±48 semitones) in C and C++.
 - Preserve original creation limits, ABI layouts and legacy filter coefficients.
