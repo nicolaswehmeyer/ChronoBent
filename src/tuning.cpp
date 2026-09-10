@@ -44,7 +44,7 @@ struct Window {
         const auto capacity=data.size()/channels;
         if(frames>capacity) return CHRONOBENT_INVALID_ARGUMENT;
         if(cached && first>=origin && uint64_t(first-origin)+frames<=capacity) return CHRONOBENT_OK;
-        cached=false; origin=first; std::fill(data.begin(),data.end(),0);
+        cached=false; origin=first; std::fill(data.begin(),data.end(),0.0f);
         const int64_t a=std::max<int64_t>(0,first),b=std::min<int64_t>(int64_t(length),first+int64_t(capacity));
         if(b>a) {
             const auto offset=std::size_t(a-first)*channels,count=std::size_t(b-a)*channels;
@@ -251,7 +251,8 @@ struct chronobent_tuner {
         const auto i=std::min(count-1,std::size_t(std::max(0.,position)/double(hop)));
         const auto j=std::min(count-1,i+1);
         const double f=frames[i].frequency_hz,g=frames[j].frequency_hz;
-        if(!f)return g;if(!g)return f;
+        if(!f)return g;
+        if(!g)return f;
         const double fraction=clamp((position-double(frames[i].source_frame))/double(hop),0,1);
         return std::exp(std::log(f)*(1-fraction)+std::log(g)*fraction);
     }
@@ -356,7 +357,7 @@ struct chronobent_tuner {
         auto status=source.load(int64_t(first),n);if(status!=CHRONOBENT_OK)return status;
         const auto channels=config.channels;std::copy_n(source.at(int64_t(first)),n*channels,original.data());
         if(unchanged) {std::copy_n(original.data(),n*channels,output);return CHRONOBENT_OK;}
-        std::fill(wet.begin(),wet.end(),0);std::fill(weight.begin(),weight.end(),0);
+        std::fill(wet.begin(),wet.end(),0.0f);std::fill(weight.begin(),weight.end(),0);
         const double maximum_radius=config.sample_rate/config.minimum_hz*1.6;
         auto grain=std::lower_bound(grains.begin(),grains.end(),double(first)-maximum_radius,
             [](const Grain &g,double position){return g.position<position;});
@@ -404,7 +405,8 @@ extern "C" chronobent_status chronobent_tune_validate_options(const chronobent_t
     return options && valid(*options)?CHRONOBENT_OK:CHRONOBENT_INVALID_ARGUMENT;
 }
 extern "C" chronobent_status chronobent_tune_create(const chronobent_tune_config *config,uint64_t frames,chronobent_tuner **out) {
-    if(!out)return CHRONOBENT_INVALID_ARGUMENT;*out=nullptr;
+    if(!out)return CHRONOBENT_INVALID_ARGUMENT;
+    *out=nullptr;
     if(!config || !(config->sample_rate>=8000 && config->sample_rate<=192000) || config->channels<1 || config->channels>2 ||
        !(config->minimum_hz>=40 && config->minimum_hz<=400) || !(config->maximum_hz>config->minimum_hz && config->maximum_hz<=1600) ||
        frames>uint64_t(config->sample_rate*600))return CHRONOBENT_INVALID_ARGUMENT;
@@ -424,17 +426,20 @@ extern "C" chronobent_status chronobent_tune_analyze(chronobent_tuner *t,chronob
     t->plan();if(!t->progress(progress,user,1))return CHRONOBENT_CANCELLED;t->ready=true;return CHRONOBENT_OK;
 }
 extern "C" const chronobent_tune_frame *chronobent_tune_frames(const chronobent_tuner *t,size_t *count) {
-    if(count)*count=t && t->ready?t->frames.size():0;return t && t->ready && !t->frames.empty()?t->frames.data():nullptr;
+    if(count)*count=t && t->ready?t->frames.size():0;
+    return t && t->ready && !t->frames.empty()?t->frames.data():nullptr;
 }
 extern "C" const chronobent_tune_note *chronobent_tune_notes(const chronobent_tuner *t,size_t *count) {
-    if(count)*count=t && t->ready?t->notes.size():0;return t && t->ready && !t->notes.empty()?t->notes.data():nullptr;
+    if(count)*count=t && t->ready?t->notes.size():0;
+    return t && t->ready && !t->notes.empty()?t->notes.data():nullptr;
 }
 extern "C" chronobent_status chronobent_tune_set_options(chronobent_tuner *t,const chronobent_tune_options *p) {
     if(!t || !p || !valid(*p))return CHRONOBENT_INVALID_ARGUMENT;
     t->options=*p;if(t->ready)t->plan();return CHRONOBENT_OK;
 }
 extern "C" chronobent_status chronobent_tune_get_options(const chronobent_tuner *t,chronobent_tune_options *p) {
-    if(!t || !p)return CHRONOBENT_INVALID_ARGUMENT;*p=t->options;return CHRONOBENT_OK;
+    if(!t || !p)return CHRONOBENT_INVALID_ARGUMENT;
+    *p=t->options;return CHRONOBENT_OK;
 }
 extern "C" chronobent_status chronobent_tune_set_note(chronobent_tuner *t,size_t index,double target) {
     if(!t || !std::isfinite(target))return CHRONOBENT_INVALID_ARGUMENT;
