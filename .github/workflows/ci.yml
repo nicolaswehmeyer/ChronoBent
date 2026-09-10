@@ -66,3 +66,4 @@ jobs:
       - run: cmake -S "$RUNNER_TEMP/chronobent-dependencies/vst3sdk" -B build-validator -DCMAKE_BUILD_TYPE=Release -DSMTG_ENABLE_VST3_PLUGIN_EXAMPLES=OFF -DSMTG_ENABLE_VSTGUI_SUPPORT=OFF
       - run: cmake --build build-validator --target validator --parallel 2
       - run: build-validator/bin/Release/validator build-plugins/out/ChronoBent.vst3
+      - run: build-validator/bin/Release/validator build-plugins/out/ChronoBentFX.vst3

@@ -14,7 +14,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[1]
 REVIEWED_IMAGES = {
     'docs/images/chronobent-0.5-hero.png':
-        'eeef07bc81ef0dc953d31cd3cdc92806985b65c5c16840918833bfe0ab1c7dd1',
+        '827cd2f568d294b173be7f762ae5fb8d558b50c8e5053ed4c43554d93784c4c2',
 }
 
 

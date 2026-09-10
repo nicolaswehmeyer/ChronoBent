@@ -4,34 +4,38 @@
 
 **Time bends. Sound becomes.**
 
-![ChronoBent Lab and the AU/VST3 instrument in a 3D product illustration](docs/images/chronobent-0.5-hero.png)
+![ChronoBent Lab, Instrument and FX in a 3D product illustration](docs/images/chronobent-0.5-hero.png)
 
 **Play a sample. Reimagine a track. Build something of your own.**
 
-[Instrument](#chronobent-instrument) · [Lab](#chronobent-lab) · [Build the SDK](#build) · [API](API.md) · [Releases](https://github.com/nicolaswehmeyer/ChronoBent/releases)
+[Instrument](#chronobent-instrument) · [FX](#chronobent-fx) · [Lab](#chronobent-lab) · [Build the SDK](#build) · [API](API.md) · [Releases](https://github.com/nicolaswehmeyer/ChronoBent/releases)
 
 </div>
 
-## One engine. Two ways to explore.
+## One engine. Three ways to explore.
 
 **ChronoBent Instrument** turns a sound into something you can play. Load a sample,
 pull its pitch and time in separate directions, colour its timbre, and find a new
 part on the keyboard. A sculpted dark interface puts five tactile controls,
 a luminous waveform and four voices within reach.
 
+**ChronoBent FX** shapes the audio already in your session. Bend pitch and timbre
+on an audio track, blend the result with the original, or capture a passage and
+explore its time independently. The same sculpted controls, made for an insert.
+
 **ChronoBent Lab** gives an entire track room to move. Change key without changing
 speed, slow a passage while keeping its key, audition a different timbre, or jump
 through the waveform and compare against bypass. A native macOS workspace for
 listening, experimenting and understanding the engine.
 
-| | Instrument | Lab |
-| --- | --- | --- |
-| Start with | A factory sound or your own sample | A local audio file |
-| Work in | A macOS AU or VST3 instrument track | A standalone macOS app |
-| Explore | Four-voice MIDI playback, envelope, loop and timbre | Track playback, seek, Master Tempo and independent formants |
-| Pitch | ±24 st knob plus ±24 st keyboard transposition | ±48 st, including fractional values |
-| Speed | 0.5×–2×, independent of played note | 50%–200% |
-| Platform | Apple Silicon and Intel, macOS 11+ | Apple Silicon and Intel, macOS 11+ |
+| | Instrument | FX | Lab |
+| --- | --- | --- | --- |
+| Start with | A factory sound or sample | Audio from your track | A local audio file |
+| Work in | AU/VST3 instrument track | AU/VST3 audio insert | Standalone macOS app |
+| Explore | Four-voice MIDI, envelope and loop | Live pitch/timbre, wet/dry and captured loops | Playback, seek and Master Tempo |
+| Pitch | ±24 st knob plus ±24 st keyboard | ±24 st | ±48 st |
+| Speed | 0.5×–2× | 0.5×–2× on a capture; live input stays 1× | 50%–200% |
+| Platform | macOS 11+, Apple Silicon/Intel | macOS 11+, Apple Silicon/Intel | macOS 11+, Apple Silicon/Intel |
 
 The image above is a generated 3D presentation based on the actual application
 interfaces. These are software tools; no physical hardware is required.
@@ -39,17 +43,17 @@ interfaces. These are software tools; no physical hardware is required.
 ## Get ChronoBent
 
 **0.5.0 is a release candidate.** Source builds are available now. Lab 0.5.0 and
-Instrument 0.5.0 universal packages are awaiting Apple notarization; their public
+Instrument/FX 0.5.0 universal packages are awaiting Apple notarization; their public
 binary download is not ready yet. [Previously verified Lab 0.2.0](https://github.com/nicolaswehmeyer/ChronoBent/releases/download/v0.2.0/ChronoBent-Lab-0.2.0-macOS-universal.dmg)
 remains available and has an earlier feature set.
 
-- **Make music:** [build the AU/VST3 instrument](plugin/README.md#build-the-plugins).
+- **Make music:** [build the AU/VST3 instrument and effect](plugin/README.md#build-the-plugins).
 - **Explore audio:** [build ChronoBent Lab](#chronobent-lab).
 - **Develop:** use the MIT C++17 library through its C ABI or C++ wrapper.
 
-The AU targets Logic Pro and other AU instrument hosts; Ableton Live can use VST3
+The AU targets Logic Pro and other AU hosts; Ableton Live can use VST3
 or AU on macOS. Automated format/native-host validation is recorded in
-[the instrument guide](plugin/README.md). Direct Logic Pro and Ableton Live session
+[the plugin guide](plugin/README.md). Direct Logic Pro and Ableton Live session
 checks remain outstanding; this is not a claim of qualification in every DAW.
 
 ## ChronoBent Instrument
@@ -73,6 +77,25 @@ Samples can be mono or stereo, up to 120 seconds. This first release does not
 implement pitch wheel, MPE, slicing or host-tempo sync. See the
 [complete controls, installation and workflow](plugin/README.md).
 
+## ChronoBent FX
+
+Insert **ChronoBent FX** on an audio track. Shape **Pitch** and **Timbre** while
+it plays, automate the controls and use **Mix** to bring the original back in.
+For independent time changes, press **Capture**, record a passage, then press
+**Play Capture**. The captured loop can run at half to double speed while its
+pitch stays where you set it. **Live** returns to the track input.
+
+- Mono/stereo audio input with linked stereo processing and dry/wet alignment.
+- Automatable pitch, timbre, transient mode, formant preservation, mix and output.
+- Captures from 50 ms to 30 seconds, embedded with settings in the DAW project.
+- Smooth control/source transitions and a visible latency/status readout.
+
+FX reports its processing delay to the host: 216 ms at 48 kHz. Enable your DAW's
+plugin delay compensation for track alignment; monitoring through the effect
+still has that delay. Live input keeps normal speed. The **Time** knob applies
+to a captured loop, and is disabled in Live mode. Select an explicit bounce range
+because loops can continue indefinitely. See the [FX workflow and limits](plugin/README.md#chronobent-fx).
+
 ## The DSP inside
 
 The same independent engine is available for your own player, editor or renderer.
@@ -92,7 +115,8 @@ the processing and source timeline.
 
 Processing contracts have automated tests. Musical transparency is not established
 across all material and settings, and extreme shifts can expose artifacts. Source
-audio must support random-access reads; the DSP is not a live-input effect.
+audio must support random-access reads. FX supplies its own bounded input cache
+and worker outside the DSP, with the additional host latency described above.
 See [quality and limits](QUALITY.md) and [the changelog](CHANGELOG-DSP.md).
 
 ## Build
@@ -122,10 +146,10 @@ The package is tested with static/shared builds on Linux, macOS and Windows.
 | CMake option | Default | Purpose |
 | --- | --- | --- |
 | `BUILD_SHARED_LIBS` | `OFF` | Shared library with exported C symbols |
-| `CHRONOBENT_BUILD_TESTS` | `ON` | DSP, API, player, instrument and renderer regressions |
+| `CHRONOBENT_BUILD_TESTS` | `ON` | DSP, API, player, instrument, effect and renderer regressions |
 | `CHRONOBENT_BUILD_EXAMPLES` | `ON` | WAV renderer, benchmark and C/C++ consumers |
 | `CHRONOBENT_BUILD_PITCH_LAB` | `OFF` | Native macOS audition app |
-| `CHRONOBENT_BUILD_PLUGINS` | `OFF` | macOS AU/VST3 instrument with pinned external dependencies |
+| `CHRONOBENT_BUILD_PLUGINS` | `OFF` | macOS AU/VST3 instrument and effect with pinned external dependencies |
 | `CHRONOBENT_SANITIZE` | `OFF` | Address and undefined-behavior sanitizers |
 
 ## C++ integration

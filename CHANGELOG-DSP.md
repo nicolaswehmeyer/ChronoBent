@@ -4,6 +4,11 @@
 
 - Add a macOS AU/VST3 sample instrument with four voices, three original factory
   sounds, local sample import, MIDI/sustain/loop, attack/release and embedded state.
+- Add separate AU/VST3 FX with live pitch/timbre, aligned dry/wet, embedded
+  30-second captures and independent captured-loop tempo. Report host latency
+  and infinite tail, and retire input generations on reset/bypass resume.
+- Add effect DSP-oracle, wrapped-capture, concurrency/allocation, native AU/VST3
+  state/routing/bypass and editor lifecycle regressions.
 - Add a sculpted local WebView interface with waveform, five knobs, typed values,
   keyboard interaction, MIDI feedback and explicit sound preparation.
 - Keep source and worker ownership outside the independent DSP. Guard source
@@ -11,7 +16,7 @@
   allocation, file access, locks and DSP resets.
 - Add instrument concurrency/allocation, native import, MIDI timing, state
   roundtrip/refusal, editor lifecycle and format-validation coverage.
-- Include the extended pitch-range work below and a shared Lab/Instrument
+- Include the extended pitch-range work below and a shared Lab/Instrument/FX
   product illustration. The numerical DSP is unchanged from the 0.4.0 milestone.
 - Universal binary distribution remains pending Apple notarization.
 

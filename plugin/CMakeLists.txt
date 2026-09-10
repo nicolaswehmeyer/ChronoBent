@@ -18,9 +18,9 @@ foreach(target IN LISTS framework_targets)
     endif()
 endforeach()
 iplug_add_plugin(ChronoBent
-    SOURCES ChronoBentPlugin.cpp ChronoBentPlugin.h mac_editor.mm mac_audio.mm mac_audio.hpp config.h
+    SOURCES ChronoBentPlugin.cpp ChronoBentPlugin.h host.hpp mac_editor.mm mac_audio.mm mac_audio.hpp config.h
     RESOURCES ../LICENSE THIRD_PARTY_NOTICES.md
-    WEB_RESOURCES resources/web/index.html resources/web/style.css resources/web/script.js
+    WEB_RESOURCES resources/web/index.html resources/web/style.css resources/web/script.js resources/web/controls.js
     LINK chronobent-instrument "-framework AVFoundation" "-framework Cocoa"
     UI WEBVIEW FORMATS AU VST3)
 set_source_files_properties(mac_audio.mm mac_editor.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
@@ -30,6 +30,7 @@ foreach(format au vst3)
         COMMAND /usr/bin/codesign --force --sign - --timestamp=none "$<TARGET_BUNDLE_DIR:ChronoBent-${format}>"
         COMMENT "Ad-hoc sign the complete local plugin bundle" VERBATIM)
 endforeach()
+add_subdirectory(fx)
 
 if(CHRONOBENT_BUILD_TESTS)
     add_executable(chronobent-plugin-audio-test ../tests/test_plugin_audio.mm mac_audio.mm)

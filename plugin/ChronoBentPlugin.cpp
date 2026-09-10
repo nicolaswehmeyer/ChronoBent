@@ -21,7 +21,7 @@ Preparation decode(const json &j) {
     p.profile=static_cast<chronobent_profile>(j.at("profile").get<int>()); p.root_note=j.at("root"); return p;
 }
 }
-ChronoBentPlugin::ChronoBentPlugin(const InstanceInfo &info):Plugin(info,MakeConfig(kNumParams,1)) {
+ChronoBentPlugin::ChronoBentPlugin(const InstanceInfo &info):ChronoBentHost(info,MakeConfig(kNumParams,1)) {
     const int prepared=IParam::kFlagCannotAutomate;
     GetParam(kPitch)->InitDouble("Pitch",0,-24,24,.01,"st",prepared);
     GetParam(kTime)->InitDouble("Time",1,.5,2,.001,"×",prepared);
@@ -158,9 +158,6 @@ bool ChronoBentPlugin::OnMessage(int tag,int control,int size,const void *data) 
     if(tag>=10 && tag<=12) { request(tag-10); return true; }
     return false;
 }
-bool ChronoBentPlugin::CanNavigateToURL(const char *url) {
-    return url && (std::strncmp(url,"file://",7)==0 || std::strcmp(url,"about:blank")==0);
-}
 bool ChronoBentPlugin::SerializeState(IByteChunk &chunk) const {
     std::lock_guard<std::mutex> lock(mControl);
     try {
@@ -210,24 +207,3 @@ int ChronoBentPlugin::UnserializeState(const IByteChunk &chunk,int position) {
         mPreset=-1; mPath.clear(); mQueued.store(++mRequest); mWake.notify_one(); return position;
     } catch(...) { return -1; }
 }
-#ifdef VST3_API
-Steinberg::tresult PLUGIN_API ChronoBentPlugin::setState(Steinberg::IBStream *stream) {
-    if(!stream) return Steinberg::kResultFalse;
-    try {
-        std::vector<uint8_t> data; std::array<uint8_t,4096> block{};
-        for(;;) {
-            Steinberg::int32 got=0;
-            const auto status=stream->read(block.data(),int(block.size()),&got);
-            if(got<0 || got>int(block.size()) || data.size()+std::size_t(got)>185000000) return Steinberg::kResultFalse;
-            data.insert(data.end(),block.begin(),block.begin()+got);
-            if(!got || status!=Steinberg::kResultOk) break;
-        }
-        if(data.size()<12) return Steinberg::kResultFalse;
-        int32_t bypass=0; std::memcpy(&bypass,data.data()+data.size()-4,4);
-        if(bypass!=0 && bypass!=1) return Steinberg::kResultFalse;
-        IByteChunk chunk; chunk.PutBytes(data.data(),int(data.size()));
-        if(UnserializeState(chunk,0)!=int(data.size())-4) return Steinberg::kResultFalse;
-        UpdateParams(this,bypass); OnRestoreState(); return Steinberg::kResultOk;
-    } catch(...) { return Steinberg::kResultFalse; }
-}
-#endif

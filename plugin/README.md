@@ -1,4 +1,4 @@
-# ChronoBent Instrument
+# ChronoBent plugins
 
 A four-voice sample instrument for macOS AU and VST3. Start with Glass Circuit,
 Soft Current or Copper Bloom, or load your own sound. Shape its pitch, time and
@@ -51,6 +51,44 @@ buffer and check the render again. Offline rendering waits for preparation and
 voice workers with a bounded timeout; a timeout is reported and must be resolved
 before treating a bounce as successful.
 
+## ChronoBent FX
+
+**ChronoBent FX** is a separate audio effect, available as AU (`aufx`) and VST3.
+Insert it on an audio track or bus. It accepts mono-to-mono, mono-to-stereo and
+stereo-to-stereo input/output, at host rates from 8 to 192 kHz.
+
+In **Live** mode, Pitch (±24 st), Timbre (±12 st with Keep Formants), transient
+mode, Mix (0–100%) and Output (-60 to +6 dB) can be automated while audio runs.
+Live cadence stays 1×: a continuous incoming stream cannot be slowed forever
+without accumulating an ever-growing delay. Time is disabled in this mode.
+
+Press **Capture** to record the incoming track. Press **Play Capture** to loop
+it, or let recording stop automatically at 30 seconds. The minimum is 50 ms.
+The **Time** control now changes speed from 0.5× to 2× independently of pitch.
+**Capture Again** records a replacement; **Live** returns to the incoming track.
+Capture/Live selection is a manual source operation, not advertised as an
+automatable parameter. There is no host-tempo sync, MIDI or file browser in FX.
+Projects embed the captured stereo audio and settings; restoring them does not
+require an external file. A 30-second capture at 192 kHz adds about 46 MB.
+
+The live callback queues input for one worker that owns the DSP and immutable
+logical input history. Output is timestamped and the dry path is delayed to
+match. FX reports a fixed delay for each host rate, including 10,368 frames
+(216 ms) at 48 kHz. Host delay compensation aligns tracks when enabled; it does
+not eliminate monitoring latency. This version is intended for track processing
+and captured passages, not low-latency live monitoring.
+
+Pitch/formant and source transitions are faded. The capture loop has a short
+edge fade. On missing worker output, the aligned dry path keeps advancing and
+the status reports underruns; a render with such warnings needs review. The
+live callback does no allocation, locking, file I/O or DSP reset. Offline render
+waits on its worker with one bounded ten-second budget per host block. Reset or
+bypass resume retires queued audio before a new input generation starts.
+
+Captured loops have no finite end, so the plugin reports an infinite tail.
+Select a bounded range when bouncing. The output has no limiter; monitor levels
+in the host, especially when changing pitch or mixing dry and wet signals.
+
 ## Build the plugins
 
 Install Xcode command-line tools, CMake 3.16+ and Git. Fetch the two reviewed,
@@ -67,12 +105,13 @@ cmake --build build-plugins --parallel
 ctest --test-dir build-plugins --output-on-failure
 ```
 
-Output: `build-plugins/out/ChronoBent.component` and
-`build-plugins/out/ChronoBent.vst3`. The build signs these local bundles ad hoc;
+Output: `build-plugins/out/ChronoBent.component`, `ChronoBent.vst3`,
+`ChronoBentFX.component` and `ChronoBentFX.vst3`. The build signs these local bundles ad hoc;
 it does not install them or provide a notarized distribution signature. Copy the
 AU to `~/Library/Audio/Plug-Ins/Components/`, or the VST3 to
 `~/Library/Audio/Plug-Ins/VST3/`, then rescan plugins in your host. Use an instrument
-track with stereo output. The DSP-only default build fetches no dependencies.
+track with stereo output for ChronoBent, or an audio insert for ChronoBent FX.
+The DSP-only default build fetches no dependencies.
 
 Pins: iPlug2 `d54f69050f517e43b941d88c2a170f0a840b9ee4`;
 VST3 SDK `3cdf9ca5d1f5b1b21e0a86832aa4abe55607bd96`.
@@ -120,3 +159,23 @@ native host test loads the exact bundle path directly and does not install it.
 VST3 validation uses Steinberg's validator built from the pinned SDK. These are
 host-contract and synthetic audio tests, not a claim of perceptual transparency,
 commercial parity or hardware-device qualification.
+
+
+FX regressions check exact unity/delay and partitioning, octave shifts against
+an independent full-source DSP oracle, maximum capture across wrapped history,
+source/control transitions, restoration, generation reset, concurrent state and
+live callback allocations. Native AU and VST3 hosts check input routing, embedded
+capture audio identity, malformed-state preservation, bypass/reset and latency/
+infinite-tail metadata. Run the exact effect and its optional editor image test:
+
+```sh
+build-plugins/plugin/fx/chronobent-effect-host-test \
+  "$PWD/build-plugins/out/ChronoBentFX.component" "$PWD/effect-editor.png"
+build-plugins/plugin/fx/chronobent-effect-vst3-test \
+  "$PWD/build-plugins/out/ChronoBentFX.vst3"
+auval -v aufx ChFx NWeh
+```
+
+`host.hpp`, `mac_editor.mm`, native test fixtures and the web control primitives
+are shared between the two plugin variants. Each variant owns its engine,
+parameters and project state. No device adapter is included in either format.

@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Nicolas Wehmeyer
 #pragma once
-#include "IPlug_include_in_plug_hdr.h"
+#include "host.hpp"
 #include "instrument.hpp"
 #include <condition_variable>
 #include <mutex>
 #include <thread>
 using namespace iplug;
 enum { kPitch, kTime, kTimbre, kAttack, kRelease, kGain, kLoop, kRoot, kProfile, kTransients, kFormants, kNumParams };
-class ChronoBentPlugin final : public Plugin {
+class ChronoBentPlugin final : public ChronoBentHost {
 public:
     explicit ChronoBentPlugin(const InstanceInfo &);
     ~ChronoBentPlugin();
@@ -19,15 +19,6 @@ public:
     bool OnMessage(int,int,int,const void *) override;
     bool SerializeState(IByteChunk &) const override;
     int UnserializeState(const IByteChunk &,int) override;
-    bool CanNavigateToURL(const char *);
-    bool OnCanDownloadMIMEType(const char *) override { return false; }
-    void *OpenWindow(void *) override;
-#ifdef AU_API
-    OSStatus SetState(CFPropertyListRef) override;
-#endif
-#ifdef VST3_API
-    Steinberg::tresult PLUGIN_API setState(Steinberg::IBStream *) override;
-#endif
 private:
     chronobent_instrument::Preparation preparation() const;
     void request(int preset,const std::string &path={});
