@@ -48,8 +48,8 @@ int main(int argc,char **argv) {
                 Class cls=NSClassFromString((__bridge NSString *)info.mCocoaAUViewClass[0]);id<AUCocoaUIBase> provider=[[cls alloc] init];
                 NSView *view=[provider uiViewForAudioUnit:host.unit withSize:NSMakeSize(1040,720)];require(view,"create host editor for tuning");
                 NSWindow *window=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,1040,720) styleMask:NSWindowStyleMaskBorderless backing:NSBackingStoreBuffered defer:NO];window.releasedWhenClosed=NO;window.contentView=view;
-                WKWebView *web=nil;require(until([&]{web=webview(view);return web!=nil;}),"tuning WebKit view");pump(1);
-                require(until([&]{return ![js(web,@"document.getElementById('tune').disabled") boolValue];}),"Note Studio button admitted current source");
+                WKWebView *web=nil;require(until([&]{web=webview(view);return web!=nil;}),"tuning WebKit view");
+                require(until([&]{return [js(web,@"Boolean(document.getElementById('tune') && !document.getElementById('tune').disabled)") boolValue];}),"Note Studio button admitted current source");
                 js(web,@"document.getElementById('tune').click()");NSWindow *studio=nil;
                 require(until([&]{for(NSWindow *candidate in NSApp.windows)if([candidate.title isEqualToString:@"ChronoBent · Note Studio"] && candidate.visible){studio=candidate;return true;}return false;}),"native Note Studio opened from plugin");
                 auto analyze=button_named(studio.contentView,@"Analyze melody");require(analyze && analyze.enabled,"native analyze action");[analyze performClick:nil];
