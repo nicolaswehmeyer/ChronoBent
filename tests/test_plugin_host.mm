@@ -1,6 +1,20 @@
 // SPDX-License-Identifier: MIT
 // Copyright (c) 2026 Nicolas Wehmeyer
 #include "plugin_host_fixture.hpp"
+// Fundamental period in samples: the first normalized autocorrelation peak above the steady part of a note.
+static double period(const std::vector<float> &s,double rate) {
+    const std::size_t begin=s.size()/4; double best=0; std::size_t at=0; bool inside=false;
+    for(std::size_t lag=std::size_t(rate/1500);lag<=std::size_t(rate/100);++lag) {
+        double dot=0,e1=0,e2=0;
+        for(std::size_t i=begin;i+lag<s.size();++i) { dot+=s[i]*s[i+lag]; e1+=s[i]*s[i]; e2+=s[i+lag]*s[i+lag]; }
+        const double r=dot/std::sqrt(e1*e2+1e-30);
+        if(r>.6) { inside=true; if(r>best) { best=r; at=lag; } } else if(inside) break;
+    }
+    require(at,"periodic instrument tone"); return double(at);
+}
+static std::vector<float> capture(Host &host,int blocks) {
+    std::vector<float> out; for(int i=0;i<blocks;++i) { host.render(); out.insert(out.end(),host.left.begin(),host.left.end()); } return out;
+}
 int main(int argc,char **argv) {
     CFBundleRef bundle=nullptr;
     @autoreleasepool {
@@ -46,6 +60,21 @@ int main(int argc,char **argv) {
             for(int i=0;i<160;++i) host.render();
             check(AudioUnitReset(host.unit,kAudioUnitScope_Global,0),"transport reset");
             host.render(); for(float v:host.left) require(v==0,"reset clears voices and tails");
+            {
+                // Preparation controls apply themselves: a host-side pitch change becomes audible without an Apply message.
+                host.note(60,100); const auto plain=capture(host,8); host.note(60,0);
+                check(AudioUnitSetParameter(host.unit,0,kAudioUnitScope_Global,0,12,0),"host pitch change");
+                pump(.6);
+                check(AudioUnitReset(host.unit,kAudioUnitScope_Global,0),"silence before the shifted note");
+                host.note(60,100); const auto shifted=capture(host,8); host.note(60,0);
+                require(std::abs(period(plain,host.rate)/period(shifted,host.rate)-2)<.06,"self-applied host pitch change doubles the fundamental");
+                check(AudioUnitSetParameter(host.unit,0,kAudioUnitScope_Global,0,0,0),"restore pitch");
+                pump(.6);
+                check(AudioUnitReset(host.unit,kAudioUnitScope_Global,0),"silence before the restored note");
+                host.note(60,100); const auto restored=capture(host,8); host.note(60,0);
+                require(std::abs(period(plain,host.rate)-period(restored,host.rate))<1.5,"restored host pitch prepares itself again");
+                check(AudioUnitReset(host.unit,kAudioUnitScope_Global,0),"silence after the pitch checks");
+            }
             check(AudioUnitSetParameter(host.unit,6,kAudioUnitScope_Global,0,1,0),"loop parameter");
             host.note(60,100); double loopEnergy=0;
             for(int i=0;i<180;++i) { host.render(); if(i>150) for(float v:host.left) loopEnergy+=v*v; }
@@ -78,11 +107,24 @@ int main(int argc,char **argv) {
                 js(web,@"gesture(0,true);send(0,7.25);gesture(0,false)");
                 AudioUnitParameterValue pitch=0; check(AudioUnitGetParameter(host.unit,0,kAudioUnitScope_Global,0,&pitch),"read UI pitch");
                 require(std::abs(pitch-7.25)<.001,"UI normalized parameter bridge");
+                require([js(web,@"/^(SOUND CHANGED · UPDATING|PREPARING YOUR SOUND)/.test(document.getElementById('status').textContent)") boolValue],"editor reports the pending update");
+                bool applied=false;
+                for(int i=0;i<600 && !applied;++i) { pump(.02); applied=[js(web,@"document.getElementById('apply').textContent.startsWith('UP TO DATE')&&document.getElementById('status').textContent.startsWith('READY TO PLAY')") boolValue]; }
+                require(applied,"editor knob release applies the sound without a click");
+                js(web,@"gesture(0,true);send(0,7.25);gesture(0,false)"); pump(.4);
+                require([js(web,@"document.getElementById('apply').textContent.startsWith('UP TO DATE')&&document.getElementById('status').textContent.startsWith('READY TO PLAY')") boolValue],"unchanged value resend stays up to date");
                 js(web,@"gesture(0,true);send(0,0);gesture(0,false);document.getElementById('apply').click()");
                 host.note(60,100); host.render(); pump(.3);
                 js(web,@"document.getElementById('preset-menu').hidden=false");
                 require([js(web,@"document.querySelectorAll('[data-preset]').length") intValue]==3,"three native presets");
                 js(web,@"document.getElementById('preset-menu').hidden=true");
+                js(web,@"document.getElementById('presets').click()");
+                require([js(web,@"[...document.querySelectorAll('[data-preset]')].every(b=>{const r=b.getBoundingClientRect();return b.contains(document.elementFromPoint(r.left+r.width/2,r.top+r.height/2));})") boolValue],"open preset entries receive pointer hits");
+                js(web,@"(()=>{const b=document.querySelector('[data-preset=\"1\"]');const r=b.getBoundingClientRect();const o={bubbles:true,cancelable:true,clientX:r.left+r.width/2,clientY:r.top+r.height/2,pointerId:1,isPrimary:true,button:0,buttons:1};const t=document.elementFromPoint(o.clientX,o.clientY);t.dispatchEvent(new PointerEvent('pointerdown',o));t.dispatchEvent(new MouseEvent('mousedown',o));o.buttons=0;t.dispatchEvent(new PointerEvent('pointerup',o));t.dispatchEvent(new MouseEvent('mouseup',o));t.dispatchEvent(new MouseEvent('click',o));})()");
+                require([js(web,@"document.getElementById('preset-menu').hidden") boolValue],"preset choice closes the menu");
+                bool swapped=false;
+                for(int i=0;i<600 && !swapped;++i) { pump(.02); swapped=[js(web,@"document.getElementById('sample-name').textContent==='Soft Current'&&document.getElementById('status').textContent.startsWith('READY TO PLAY')") boolValue]; }
+                require(swapped,"editor preset choice loads the factory sound");
                 __block bool captured=false;
                 WKSnapshotConfiguration *configuration=[WKSnapshotConfiguration new]; configuration.rect=NSMakeRect(0,0,1040,720);
                 [web takeSnapshotWithConfiguration:configuration completionHandler:^(NSImage *image,NSError *error) {

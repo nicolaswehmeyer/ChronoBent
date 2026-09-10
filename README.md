@@ -59,15 +59,15 @@ checks remain outstanding; this is not a claim of qualification in every DAW.
 ## ChronoBent Instrument
 
 Choose **Glass Circuit**, **Soft Current** or **Copper Bloom**, or load your own
-sample. Set **Pitch**, **Time** and **Timbre**, press **Apply Sound**, wait for
-**Ready to Play**, and play a melody or chord. The instrument keeps transformed
+sample. Set **Pitch**, **Time** and **Timbre**, wait for **Ready to Play**, and
+play a melody or chord. The instrument keeps transformed
 duration independent of the note you play.
 
 - Four voices, velocity, sustain pedal, loop and a directly playable keyboard.
 - Fine pitch and independent formant colour, with three transient modes and
   three analysis profiles.
 - Automatable attack, release, output and loop controls; preparation controls
-  are applied explicitly before playing.
+  prepare the sound by themselves once a change settles, before playing.
 - Embedded sample and settings in your DAW project, so the original file can move.
 - Local processing, local interface assets and system fonts. No account or
   network service is needed to make sound.

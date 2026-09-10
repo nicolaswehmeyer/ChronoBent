@@ -16,6 +16,15 @@ json encode(const Preparation &p) {
     return {{"tempo",p.tempo},{"pitch",p.semitones},{"formant",p.formant_scale},{"envelope",p.envelope_ms},
         {"transients",p.transients},{"profile",int(p.profile)},{"root",p.root_note}};
 }
+bool prepared_parameter(int index) {
+    return index==kPitch || index==kTime || index==kTimbre || index==kRoot || index==kProfile || index==kTransients || index==kFormants;
+}
+bool same(const Preparation &a,const Preparation &b) {
+    return a.tempo==b.tempo && a.semitones==b.semitones && a.formant_scale==b.formant_scale && a.envelope_ms==b.envelope_ms &&
+        a.transients==b.transients && a.profile==b.profile && a.root_note==b.root_note;
+}
+int64_t now_ns() { return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+constexpr int64_t settle_ns=150000000;
 Preparation decode(const json &j) {
     Preparation p; p.tempo=j.at("tempo"); p.semitones=j.at("pitch"); p.formant_scale=j.at("formant");
     p.envelope_ms=j.at("envelope"); p.transients=j.at("transients");
@@ -53,8 +62,22 @@ Preparation ChronoBentPlugin::preparation() const {
     p.transients=GetParam(kTransients)->Int(); return p;
 }
 void ChronoBentPlugin::request(int preset,const std::string &path) {
-    std::lock_guard<std::mutex> lock(mControl);
+    std::lock_guard<std::mutex> lock(mControl); queue(preset,path);
+}
+void ChronoBentPlugin::queue(int preset,const std::string &path) {
     mPreset=preset; mPath=path; mTunePending.reset();mPending=preparation(); mQueued.store(++mRequest); mWake.notify_one();
+}
+void ChronoBentPlugin::OnParamChange(int index,EParamSource source,int offset) {
+    ChronoBentHost::OnParamChange(index,source,offset);
+    if(prepared_parameter(index)) mPreparationChanged.store(now_ns());
+}
+void ChronoBentPlugin::BeginInformHostOfParamChangeFromUI(int index) {
+    if(prepared_parameter(index)) mGestures.fetch_add(1);
+    ChronoBentHost::BeginInformHostOfParamChangeFromUI(index);
+}
+void ChronoBentPlugin::EndInformHostOfParamChangeFromUI(int index) {
+    ChronoBentHost::EndInformHostOfParamChangeFromUI(index);
+    if(prepared_parameter(index) && mGestures.load()>0) { mGestures.fetch_sub(1); mPreparationChanged.store(now_ns()); }
 }
 void ChronoBentPlugin::work() {
     uint64_t consumed=0;
@@ -154,6 +177,7 @@ void ChronoBentPlugin::ProcessBlock(sample **,sample **outputs,int frames) {
 }
 void ChronoBentPlugin::OnIdle() {
     std::unique_lock<std::mutex> lock(mControl,std::try_to_lock); if(!lock.owns_lock()) return;
+    if(!mGestures.load() && now_ns()-mPreparationChanged.load()>=settle_ns && !same(preparation(),mPending)) queue(-1,{});
     const auto s=mEngine->snapshot();
     const json state={{"ready",s.ready},{"preparing",s.preparing || mSubmitted.load()!=mQueued.load()},{"progress",s.progress},{"name",s.name},
         {"duration",s.duration},{"rate",s.sample_rate},{"voices",s.active_voices},{"notes",s.active_notes},{"peak",mPeak.load()},

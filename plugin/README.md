@@ -2,7 +2,7 @@
 
 A four-voice sample instrument for macOS AU and VST3. Start with Glass Circuit,
 Soft Current or Copper Bloom, or load your own sound. Shape its pitch, time and
-timbre, press **Apply Sound**, then play it from MIDI or the on-screen keyboard.
+timbre, wait for **Ready to Play**, then play it from MIDI or the on-screen keyboard.
 
 The 0.6.0 binaries are release candidates awaiting Apple notarization. The source
 build and the tests below are available now. macOS 11 or later; Apple Silicon and
@@ -33,8 +33,11 @@ use arrow keys on a focused knob, or type an exact value beneath it. The compute
 keys A–K play one octave when an input field is not focused. MIDI activity lights
 the keyboard and the four voice indicators.
 
-Pitch, Time, Timbre, root, detail and transient changes need **Apply Sound**.
-Preparing a new source keeps the current one available; publication stops its
+Pitch, Time, Timbre, root, detail and transient changes prepare a new sound by
+themselves about 150 ms after the control is released, typed or changed by the
+host; **Apply Sound** re-prepares immediately, for example after an error.
+A saved project reopens with the sound its controls show. Preparing a new source
+keeps the current one available; publication stops its
 old voices. Wait for **Ready to Play** before recording or bouncing. Attack,
 release, output and loop are host-automatable performance controls. Preparation
 controls deliberately do not advertise live automation.
