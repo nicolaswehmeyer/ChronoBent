@@ -12,6 +12,10 @@
   excluded entirely; no analysis is added to existing processor calls.
 - Independent held-out vocal measurements and synthetic pitch/envelope checks;
   bounded ±5 st tuning, with no commercial perceptual-equivalence claim.
+- Instrument preparation controls (pitch, time, timbre, root, detail, transients,
+  formants) prepare the sound by themselves after a settled editor or host
+  change; Apply Sound remains an immediate manual re-preparation. Reopened
+  projects prepare the sound their controls show.
 
 ## 0.5.0 - Release candidate
 

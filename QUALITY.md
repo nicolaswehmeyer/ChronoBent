@@ -279,7 +279,8 @@ MIDI, offline first-note readiness, automation, looping and transport reset.
 Native import checks preserve float WAV samples exactly at their original rate;
 8/48/96/192 kHz conversions check duration, tone frequency and linked stereo.
 The native WebKit editor test and browser interaction checks cover parameter
-normalization, typed/fine controls, Apply state, keyboard MIDI, formant activation,
+normalization, typed/fine controls, self-applying knob release and host pitch
+changes measured by fundamental period, Apply state, keyboard MIDI, formant activation,
 repeated open/close and actual rendered layout. VST3 validation passes 47 tests;
 Apple AU validation passes. Instrument, import, AU host and Lab audio gates also
 run successfully through Rosetta using the x86_64 slices. This is not a test on

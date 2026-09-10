@@ -17,6 +17,9 @@ public:
     void ProcessMidiMsg(const IMidiMsg &) override;
     void OnReset() override;
     void OnIdle() override;
+    void OnParamChange(int,EParamSource,int) override;
+    void BeginInformHostOfParamChangeFromUI(int) override;
+    void EndInformHostOfParamChangeFromUI(int) override;
     bool OnMessage(int,int,int,const void *) override;
     bool SerializeState(IByteChunk &) const override;
     int UnserializeState(const IByteChunk &,int) override;
@@ -26,6 +29,7 @@ private:
     bool apply_tuning(std::shared_ptr<const chronobent_host::TuneResult>,bool corrected);
     void show_tuning();
     void request(int preset,const std::string &path={});
+    void queue(int preset,const std::string &path);
     void work();
     void midi(const IMidiMsg &) noexcept;
     // Hosts suspend processing before OnReset. Control/UI/serialization share
@@ -51,4 +55,8 @@ private:
     std::atomic<uint64_t> mQueued{0},mSubmitted{0};
     std::atomic<bool> mRateSupported{true};
     std::atomic<bool> mOfflineTimeout{false};
+    // Preparation controls apply themselves once their last change has settled
+    // and no editor gesture is open. Written from any parameter source thread.
+    std::atomic<int64_t> mPreparationChanged{0};
+    std::atomic<int> mGestures{0};
 };
