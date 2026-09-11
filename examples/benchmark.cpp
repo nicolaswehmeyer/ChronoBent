@@ -37,7 +37,9 @@ int main() {
                 0.15*std::sin(2*3.141592653589793*440*t) + 0.2*attack*(double(noise)/4294967296.0-0.5));
             source.audio[2*i+1] = static_cast<float>(0.7*source.audio[2*i] + 0.1*std::sin(2*3.141592653589793*659.25*t));
         }
-        for (auto ratios : {std::array<double, 2>{1, 0.5}, {1, 2}, {0.25, 2}, {1.08, 1}, {2, 0.5}}) {
+        // The last two cases mirror a player at Tempo +10% with Key -12/+12
+        // under Master Tempo, where the vocoder and resampler both run.
+        for (auto ratios : {std::array<double, 2>{1, 0.5}, {1, 2}, {0.25, 2}, {1.08, 1}, {2, 0.5}, {1.1, 0.5}, {1.1, 2}}) {
             chronobent_config config{sr, 2, 0, 1, 0};
             chronobent *raw = nullptr;
             if (chronobent_create(&config, &raw) != CHRONOBENT_OK) return 1;

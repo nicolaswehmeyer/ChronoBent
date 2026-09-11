@@ -13,7 +13,7 @@ class Envelope {
 public:
     Envelope(std::size_t size, double sample_rate);
     void configure(double milliseconds) noexcept;
-    void analyze(const double *magnitudes) noexcept;
+    void analyze(const float *magnitudes) noexcept;
     float correction(std::size_t bin, double pitch) const noexcept;
 private:
     std::size_t size_, cutoff_;

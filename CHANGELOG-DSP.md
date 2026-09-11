@@ -1,5 +1,29 @@
 # Change log
 
+## 0.7.0 — 2026-09-11, player throughput
+
+- Stereo channel pairs share one complex transform in analysis and synthesis.
+  Exactly conjugate-symmetric stage twiddles keep real-input spectra exactly
+  Hermitian, so the channels separate with crosstalk below -150 dB instead of
+  exactly zero; identical or opposite channels agree within float rounding.
+- Contiguous per-stage twiddles, permutation-free transforms fed in bit-reversed
+  order, a branch-free inverse and AArch64 NEON butterflies with an
+  identical-order scalar fallback.
+- Interpolation over a mirrored ring, so every sinc span is contiguous, with
+  four-lane accumulation shared by the NEON and scalar paths.
+- Analysis frames retain the previous window's validated samples and fetch only
+  new source frames; a failed fetch keeps that prefix and stays retryable.
+- Single-precision bin magnitudes and flux, branch-free peak picking, region
+  fills and buffer exchange instead of spectrum copies. The phase advance is one
+  double-precision arctangent of now*conj(before) per propagating peak;
+  rotation multipliers come from double-precision series, not library calls.
+- Best-of-three render time fell 2.5 to 2.7 times on Apple Silicon (Clang 21,
+  -O3) and 2.7 to 3.3 times with the player toolchain (GCC 7.5, -O2, AArch64)
+  across the benchmark cases; two Master Tempo player cases (tempo 1.1 with
+  pitch 0.5 and 2) were added. Output is not byte-identical to 0.6.0: the wide
+  diagnostic matrix shows no in-band pitch change above 0.5 cent and no tone
+  residual worse by more than 3 dB. Device timing is not measured.
+
 ## 0.6.0 — recorded monophonic tuning
 
 - Optional C/C++ tuning API with periodicity/temporal analysis, scale correction,

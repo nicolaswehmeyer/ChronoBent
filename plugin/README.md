@@ -4,7 +4,7 @@ A four-voice sample instrument for macOS AU and VST3. Start with Glass Circuit,
 Soft Current or Copper Bloom, or load your own sound. Shape its pitch, time and
 timbre, wait for **Ready to Play**, then play it from MIDI or the on-screen keyboard.
 
-The 0.6.0 binaries are release candidates awaiting Apple notarization. The source
+Binaries built from this 0.7.0 source await Apple notarization. The source
 build and the tests below are available now. macOS 11 or later; Apple Silicon and
 Intel. AU is the format for Logic Pro; Ableton Live can load VST3 or AU on macOS.
 Automated AU/VST3 and native host tests do not establish testing inside every DAW
@@ -26,7 +26,7 @@ version. Direct Logic Pro and Ableton Live session checks remain outstanding.
   Balanced or Detailed analysis. Longer windows help resolve low fundamentals.
 - **Performance:** velocity, four voices with oldest-voice stealing, attack,
   release, loop, MIDI sustain (CC64), all-notes-off (CC123), all-sound-off (CC120).
-  Pitch wheel and MPE are not implemented in 0.6.0.
+  Pitch wheel and MPE are not implemented in 0.7.0.
 
 Drag a knob vertically; hold Shift for fine adjustment. Double-click to reset,
 use arrow keys on a focused knob, or type an exact value beneath it. The computer

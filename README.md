@@ -42,9 +42,9 @@ interfaces. These are software tools; no physical hardware is required.
 
 ## Get ChronoBent
 
-**0.6.0 is a release candidate.** Source builds are available now. Lab 0.6.0 and
-Instrument/FX 0.6.0 universal packages are awaiting Apple notarization; their public
-binary download is not ready yet. [Previously verified Lab 0.2.0](https://github.com/nicolaswehmeyer/ChronoBent/releases/download/v0.2.0/ChronoBent-Lab-0.2.0-macOS-universal.dmg)
+**0.7.0 is a source release** with the vectorized DSP; builds are available now.
+The Lab and Instrument/FX universal packages are awaiting Apple notarization; their
+public binary download is not ready yet. [Previously verified Lab 0.2.0](https://github.com/nicolaswehmeyer/ChronoBent/releases/download/v0.2.0/ChronoBent-Lab-0.2.0-macOS-universal.dmg)
 remains available and has an earlier feature set.
 
 - **Make music:** [build the AU/VST3 instrument and effect](plugin/README.md#build-the-plugins).
@@ -165,6 +165,22 @@ The package is tested with static/shared builds on Linux, macOS and Windows.
 | `CHRONOBENT_BUILD_PITCH_LAB` | `OFF` | Native macOS audition app |
 | `CHRONOBENT_BUILD_PLUGINS` | `OFF` | macOS AU/VST3 instrument and effect with pinned external dependencies |
 | `CHRONOBENT_SANITIZE` | `OFF` | Address and undefined-behavior sanitizers |
+
+### Embedded and player builds
+
+A player or other embedded host needs only the six DSP units in
+[sources.txt](sources.txt); leave out `tuning-sources.txt`, `plugin/`, `host/`,
+`examples/`, `tests/` and Lab. Compile them as C++17 with `-O2` or higher and
+without fast math; `-ffp-contract=fast` is also unnecessary. On AArch64 the
+transform, resampler, energy, magnitude, overlap-add and validation kernels use
+NEON automatically when `__aarch64__` and `__ARM_NEON` are defined, and every
+other target runs the equivalent scalar code. An `-O2` build of GCC 7 or newer
+already benefits, because the vectorization is explicit rather than left to the
+optimizer. Create one instance per render thread and reuse it through
+`chronobent_reset`; render in small fixed blocks; feed one pre-mixed source per
+selection rather than one instance per stem. Time-to-first-output after a reset
+is what a takeover-style host waits for, so measure it with
+[the benchmark](examples/benchmark.cpp) built by the target toolchain.
 
 ## C++ integration
 
@@ -289,9 +305,9 @@ It loads the source into memory. On Windows, use `build/Release/chronobent-rende
 
 ## ChronoBent Lab
 
-Build the 0.6.0 app below while its universal package awaits notarization.
+Build the 0.7.0 app below while its universal package awaits notarization.
 It targets macOS 11 or later on Apple Silicon and Intel. The controls described
-here belong to 0.6.0; the earlier verified 0.2.0 download has fewer features.
+here belong to 0.7.0; the earlier verified 0.2.0 download has fewer features.
 
 Open a track, then press **Space** to play or pause. Drag the position slider to
 seek, or use the **arrow keys** to skip five seconds. Restart returns to the

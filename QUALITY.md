@@ -85,6 +85,48 @@ measured 4% to 10% lower best render time (9% in total) on one Apple Silicon
 machine. Memory is unchanged: previous spectra replace two phase arrays of the
 same size. This is a local throughput observation, not a device measurement.
 
+### 0.7.0 player throughput optimization
+
+The 0.6.0 engine was profiled with the player toolchain (Ubuntu 18.04 GCC 7.5,
+`-O2`, AArch64), which vectorizes nothing at that level, so the FFT, resampler
+and per-bin loops ran scalar on the player. The rework pairs stereo channels
+in one complex transform, stores twiddles contiguously, skips the bit-reversal
+pass, adds NEON kernels with identical-order scalar fallbacks, interpolates
+over a mirrored ring, fetches only new source frames per analysis window and
+replaces per-peak library `atan2`/`sincos` calls with series evaluations
+(phase in double precision, about 1e-9 rad). The stereo pairing changes
+rounding: identical, opposite or silent channels now agree within float
+rounding (measured -132 dB for identical channels, -156 dB rms crosstalk into a
+silent channel) instead of bit for bit, and three tests bound those cases
+explicitly.
+
+Best-of-three benchmark render time, 4 s of stereo output per case:
+
+| Case (rate, tempo, pitch) | GCC 7.5 `-O2` before | after | Clang 21 `-O3` before | after |
+| --- | --- | --- | --- | --- |
+| 96 kHz, 1.1, 2 (Key +12, Tempo +10) | 0.243 s | 0.077 s (3.17x) | 0.178 s | 0.068 s (2.64x) |
+| 96 kHz, 1.1, 0.5 (Key -12, Tempo +10) | 0.142 s | 0.050 s (2.85x) | 0.101 s | 0.038 s (2.63x) |
+| 96 kHz, 0.25, 2 | 1.060 s | 0.320 s (3.32x) | 0.766 s | 0.288 s (2.66x) |
+| 96 kHz, 1.08, 1 | 0.116 s | 0.038 s (3.07x) | 0.082 s | 0.033 s (2.50x) |
+| All twelve cases | | 2.68x to 3.34x | | 2.50x to 2.69x |
+
+Time to the first 4096 output frames after reset fell from 4.0 ms to 1.3 ms in
+the Key +12 player case with the player toolchain. Both compilers ran on one
+Apple Silicon machine (the GCC build inside the project's ARM64 container),
+so these are codegen comparisons, not player CPU measurements.
+
+The wide 306-render diagnostic matrix reports no contract failures for either
+engine. Against the 0.6.0 matrix no in-band case changed pitch by more than
+0.5 cent, no fitted tone residual worsened by more than 3 dB (fifteen improved
+by 4 to 13 dB), the worst stopband moved from -114.6 to -114.3 dB and the
+opposite-phase residual peak is 1.8e-7. Under-resolved compact-window bass
+cases remain diagnostics in both engines. Output waveform peaks differ in some
+tonal and formant cases at unchanged rms: the synthetic vowel at pitch 0.5
+with formant scale 1 now keeps a crest factor of 4.2 against the input's 4.3
+(previously 2.5), while two stereo tonal cases moved further from the input
+crest. The existing music renders were not re-listened in this pass; blinded
+listening remains required before any release claim.
+
 ## Run the measurements
 
 Build with examples and tests enabled, then run:

@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(chronobent VERSION 0.6.0 LANGUAGES C CXX)
+project(chronobent VERSION 0.7.0 LANGUAGES C CXX)
 
 option(CHRONOBENT_BUILD_TESTS "Build synthetic regression tests" ON)
 option(CHRONOBENT_BUILD_EXAMPLES "Build the WAV renderer and benchmark" ON)

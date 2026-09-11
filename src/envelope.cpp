@@ -13,11 +13,11 @@ void Envelope::configure(double milliseconds) noexcept {
     cutoff_ = std::min(size_ / 4, static_cast<std::size_t>(sample_rate_ * (milliseconds * .001)));
 }
 
-void Envelope::analyze(const double *magnitudes) noexcept {
+void Envelope::analyze(const float *magnitudes) noexcept {
     double maximum = 1e-12;
-    for (std::size_t k = 0; k <= size_ / 2; ++k) maximum = std::max(maximum, magnitudes[k]);
+    for (std::size_t k = 0; k <= size_ / 2; ++k) maximum = std::max(maximum, double(magnitudes[k]));
     for (std::size_t k = 0; k <= size_ / 2; ++k) {
-        scratch_[k] = Complex(static_cast<float>(std::log(std::max(magnitudes[k], maximum * 1e-5))), 0);
+        scratch_[k] = Complex(static_cast<float>(std::log(std::max(double(magnitudes[k]), maximum * 1e-5))), 0);
         if (k && k < size_ / 2) scratch_[size_ - k] = scratch_[k];
     }
     fft_.transform(scratch_.data(), true);

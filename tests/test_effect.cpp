@@ -71,7 +71,9 @@ int main() {
         process(engine,input,l,r,controls); healthy(engine);
         const double measured=frequency(l,latency+8000,l.size()-512,rate),expected=440*std::exp2(pitch/12);
         require(std::abs(measured-expected)<expected*.005,"live pitch keeps input cadence and shifts frequency");
-        for(std::size_t i=0;i<l.size();++i) require(std::isfinite(l[i]) && l[i]==r[i],"finite linked channels");
+        // Identical channels share one packed transform; they agree within
+        // float rounding (about -130 dB), not bit for bit.
+        for(std::size_t i=0;i<l.size();++i) require(std::isfinite(l[i]) && std::abs(l[i]-r[i])<1e-5f,"finite linked channels");
         chronobent_config config{}; chronobent *oracle=nullptr;
         const chronobent_pitch_range range{.25,4};
         require(chronobent_config_for_profile(rate,2,CHRONOBENT_PROFILE_BALANCED,&config)==CHRONOBENT_OK &&

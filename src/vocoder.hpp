@@ -23,6 +23,8 @@ public:
     std::int64_t analysis_start() const noexcept;
     std::int64_t synthesis_start() const noexcept { return start_; }
 private:
+    void analyze(const float *input, const float *window) noexcept;
+    void synthesize(const float *window) noexcept;
     std::size_t size_, channels_, bins_, hop_, flux_min_;
     bool transients_, mixed_ = false, primed_ = false;
     double formant_scale_, sample_rate_;
@@ -32,9 +34,14 @@ private:
     Fft fft_;
     Envelope envelope_;
     std::vector<float> window_, attack_analysis_, attack_synthesis_, overlap_, weight_;
-    std::vector<Complex> spectrum_, previous_spectrum_;
-    std::vector<double> magnitude_, previous_magnitude_, rotation_, next_rotation_;
-    std::vector<std::size_t> reference_, peaks_;
+    std::vector<float> magnitude_, previous_magnitude_;
+    // Half spectra (bins_ per channel); one full-size complex scratch carries
+    // two real channels through each transform. Analysis and reference spectra
+    // swap after each frame instead of copying.
+    std::vector<Complex> spectrum_, previous_spectrum_, packed_, factor_;
+    std::vector<double> rotation_, next_rotation_;
+    std::vector<std::uint32_t> reference_;
+    std::vector<std::size_t> peaks_;
 };
 }
 #endif

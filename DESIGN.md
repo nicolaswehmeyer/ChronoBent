@@ -11,25 +11,30 @@ accumulate ratio drift.
 
 | Unit | Responsibility |
 | --- | --- |
-| `fft` | Iterative radix-2 complex FFT, precomputed twiddles, normalized inverse |
-| `vocoder` | Centered analysis, shared phase rotation, peak regions, sparse attacks, normalized overlap-add |
+| `fft` | Iterative radix-2 complex FFT, contiguous conjugate-symmetric stage twiddles, permutation-free entry, NEON butterflies, normalized inverse |
+| `vocoder` | Centered analysis, paired real transforms, shared phase rotation, peak regions, sparse attacks, normalized overlap-add |
 | `envelope` | Tapered cepstral smoothing and bounded spectral-envelope correction |
 | `sinc` | 96 to 768-tap, 1024-phase interpolated Blackman-windowed low-pass resampling |
-| `chronobent` | C ABI, validation, reset epochs, clipped source reads, ring storage and exact output length |
+| `chronobent` | C ABI, validation, reset epochs, cached clipped source reads, mirrored ring storage and exact output length |
 | `controls` | Shared validation and legacy/extended parameter translation |
 | `processor` | Bound source, preallocated epoch pair, control preroll, retryable crossfades, seek, planar output and position |
 
 Each instance owns its tables and working buffers. The standard C++ library is
-required. File and audio-device APIs belong to the examples.
+required. The only platform header is the compiler's AArch64 NEON intrinsics,
+included behind an architecture guard next to a scalar fallback that performs
+the same operations. File and audio-device APIs belong to the examples.
 
 ## Resampling capacity
 
 The creation-time pitch range sets filter storage capacity. Active filters keep
 96 taps up to pitch 2 and use an even-rounded `48*pitch` above it, preserving
 transition-band width relative to the reduced input bandwidth. Preparation and
-rendering reuse allocated storage. For a given legacy ratio, coefficient and
-sample accumulation order remain unchanged. The synthesis ring remains four
-windows: even the smallest ring holds 768 taps plus a complete synthesis hop.
+rendering reuse allocated storage. For a given legacy ratio the coefficients
+are unchanged; taps accumulate in four interleaved lanes whose fixed sum makes
+a given absolute position independent of the caller's block partition. The
+synthesis ring remains four windows: even the smallest ring holds 768 taps
+plus a complete synthesis hop. The ring repeats its first 768 slots after its
+end, so every interpolation span is one contiguous run of frames.
 The maximum pitch 16 and minimum tempo .25 retain a positive integer analysis
 advance at the minimum window, avoiding repeated zero-distance phase estimates.
 
@@ -43,14 +48,27 @@ Analysis centers are rounded from absolute positions. Phase advances use the
 actual integer distance between consecutive analysis frames, not a nominal
 fractional hop.
 
-Per-bin magnitude uses total channel power. The dominant channel provides a
-phase estimate, comparing that same channel across both frames. A common phase
-rotation is applied to each channel's own complex spectrum. Summing channel
-waveforms to derive phase would lose opposite-phase material. Nearest-peak
-identity locking constrains tonal regions while retaining channel differences.
-Only peak phase estimates are propagated when locking is active. Consecutive
-bins with an identical rotation reuse one sine/cosine multiplier; phase history
-for every channel is still retained for later reference changes.
+Channel pairs share one complex transform: the pair enters as real and
+imaginary parts, and because the stage twiddles are exactly conjugate
+symmetric, a real input's spectrum is exactly Hermitian and the two half
+spectra separate without crosstalk beyond the transform's own rounding.
+Synthesis packs the two rotated half spectra the same way and reads both
+channels from one inverse transform. An odd trailing channel uses the
+transform alone. Silent, identical or opposite channels therefore agree within
+single-precision rounding (below -130 dB) rather than bit for bit.
+
+Per-bin magnitude uses total channel power in single precision. The dominant
+channel provides a phase estimate: the phase advance is the argument of the
+current bin times the conjugate of its previous analysis value, with the
+products formed in double precision and a series arctangent accurate to about
+1e-9 rad. A common phase rotation is applied to each channel's own complex
+spectrum. Summing channel waveforms to derive phase would lose opposite-phase
+material. Nearest-peak identity locking constrains tonal regions while
+retaining channel differences. Only peak phase estimates are propagated when
+locking is active. Consecutive bins with an identical rotation reuse one
+multiplier, evaluated by a double-precision series instead of a library call;
+the untouched analysis spectra of every channel become the next frame's
+reference by buffer exchange rather than by copy.
 These relationships are numerical contracts tested independently with opposite
 and unrelated channel signals.
 
@@ -87,8 +105,14 @@ The FFT uses explicit finite complex products. Source admission and the maximum
 window/gain bounds keep intermediates finite and far below float overflow.
 Products are separate statements to retain rounding before their sum/difference;
 this avoids the generic complex nonfinite-recovery path without asking for fast
-math. The first combined-expression prototype changed rounding and was rejected.
-The implementation retains the independent DFT oracle and frozen-output checks.
+math. Stage twiddles are stored contiguously per stage, the inverse negates the
+cross terms instead of branching per butterfly, and the vocoder stores windowed
+samples and packed spectra directly in bit-reversed order so no permutation pass
+runs. On AArch64 the butterflies, interpolation spans, frame energy, bin
+magnitudes, overlap-add and input validation use NEON intrinsics; the scalar
+fallback performs the same operations in the same lane order, so results differ
+only through a compiler's own contraction choices. Fast math is never enabled.
+The implementation retains the independent DFT oracle.
 
 ## Timing and failures
 
@@ -98,8 +122,10 @@ to the declared duration after tail synthesis. This compensates the sample
 coordinate of the result, not the time or future audio needed to compute it.
 There is no claim of live-input zero latency.
 
-Read callbacks must supply an immutable source for an epoch. A frame is fully
-read and validated before phase/overlap state commits. A failed source read or
+Read callbacks must supply an immutable source for an epoch. Consecutive
+analysis frames overlap by at least three quarters, so the engine keeps the
+previous window's validated samples and fetches only the frames beyond it.
+A frame is fully read and validated before phase/overlap state commits. A failed source read or
 invalid sample leaves that analysis frame retryable. Already produced samples
 remain committed. Retry callers retain that prefix and resume rendering.
 Invalid reset arguments leave the prior epoch intact. Successful reset removes
